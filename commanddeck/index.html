@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Command Deck · Brikkin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --bg:#040806; --panel:#08110d; --panel2:#0b1712; --line:#15352a; --line2:#1d4a39;
+  --neon:#3dff8f; --green:#1fc46a; --deep:#0e5a38; --ink:#d7f7e5; --muted:#6f9483; --faint:#2a4a3d;
+  --amber:#ffbf47; --red:#ff6161;
+  --display:"Chakra Petch","Segoe UI",system-ui,sans-serif;
+  --body:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:14px;
+  background-image:linear-gradient(rgba(61,255,143,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(61,255,143,.035) 1px,transparent 1px);
+  background-size:28px 28px;}
+.wrap{max-width:1440px;margin:0 auto;padding-inline:20px;padding-block:22px 40px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:18px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;color:var(--green);text-transform:uppercase}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(24px,3.2vw,36px);margin:4px 0 2px;letter-spacing:.02em;text-wrap:balance}
+h1 span{color:var(--neon);text-shadow:0 0 18px rgba(61,255,143,.45)}
+.sub{color:var(--muted);font-size:13px}
+.actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.btn{font-family:var(--display);font-weight:600;letter-spacing:.06em;font-size:13px;color:var(--bg);background:var(--neon);
+  border:0;border-radius:6px;padding:10px 16px;cursor:pointer;box-shadow:0 0 18px rgba(61,255,143,.35)}
+.btn:hover{background:#7dffb5}
+.btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.src{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.src b{color:var(--ink);font-weight:500}
+.grid{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px}
+.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:10px;padding:16px 18px;position:relative;min-width:0}
+.panel::before{content:"";position:absolute;inset:0 0 auto 0;height:1px;background:linear-gradient(90deg,transparent,rgba(61,255,143,.5),transparent);border-radius:10px 10px 0 0}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:12px}
+.ph h2{font-family:var(--display);font-size:14px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin:0;color:var(--ink)}
+.ph .hint{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s4{grid-column:span 4}.s5{grid-column:span 5}.s7{grid-column:span 7}
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(var(--n,7),minmax(0,1fr));gap:14px}
+.paybar{display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--faint);margin:4px 0 14px}
+.paybar i{display:block;height:100%;border-right:2px solid var(--panel)}
+.paybar i.rec{background:var(--neon);box-shadow:0 0 8px rgba(61,255,143,.5)}
+.paybar i.pend{background:rgba(255,191,71,.55)}
+.paybar i.over{background:var(--red)}
+.paybar i.prog{background:transparent}
+.pchip.prog{color:var(--muted);border-color:var(--line2)}
+.paysum{display:flex;flex-wrap:wrap;gap:22px;margin-bottom:6px;font-size:12.5px;color:var(--muted)}
+.paysum b{display:block;font-family:var(--display);font-size:22px;color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.paysum b.g{color:var(--neon)}.paysum b.a{color:var(--amber)}
+.pchip{display:inline-block;font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid;white-space:nowrap}
+.pchip.rec{color:var(--neon);border-color:var(--deep);background:rgba(61,255,143,.08)}
+.pchip.pend{color:var(--amber);border-color:rgba(255,191,71,.5)}
+.pchip.over{color:var(--red);border-color:rgba(255,97,97,.6);background:rgba(255,97,97,.08)}
+.kpi{padding:14px 16px}
+.kpi .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.kpi .val{font-family:var(--display);font-weight:700;font-size:38px;line-height:1.1;margin-top:6px;color:var(--neon);text-shadow:0 0 16px rgba(61,255,143,.4);font-variant-numeric:tabular-nums}
+.kpi .val.warn{color:var(--amber);text-shadow:0 0 14px rgba(255,191,71,.35)}
+.kpi .val.dim{color:var(--muted);text-shadow:none;font-size:22px;padding-top:10px}
+.kpi .foot{font-size:12px;color:var(--muted);margin-top:4px}
+.spark{height:4px;background:var(--faint);border-radius:2px;margin-top:10px;overflow:hidden}
+.spark i{display:block;height:100%;background:linear-gradient(90deg,var(--deep),var(--neon));box-shadow:0 0 8px var(--neon)}
+/* gauge */
+.gaugewrap{display:flex;flex-direction:column;align-items:center}
+.minis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:100%;margin-top:6px}
+.mini{display:flex;flex-direction:column;align-items:center;text-align:center}
+.mini .t{font-size:11.5px;color:var(--muted);margin-top:4px;line-height:1.3}
+svg text{font-family:var(--mono)}
+.scroll{overflow-x:auto}
+/* table */
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px}
+th{font-family:var(--mono);font-weight:500;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--green);text-align:left;padding:8px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:hover td{background:rgba(61,255,143,.04)}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip{display:inline-block;width:22px;height:8px;border-radius:2px}
+.chip.d{background:var(--neon);box-shadow:0 0 6px rgba(61,255,143,.6)}
+.chip.p{background:transparent;border:1px solid var(--amber)}
+.chip.n{background:var(--faint);opacity:.5}
+.stage{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+.stage.ok{color:var(--neon)}.stage.pend{color:var(--amber)}
+.pbar{display:flex;align-items:center;gap:8px}
+.pbar .track{width:70px;height:5px;background:var(--faint);border-radius:3px;overflow:hidden}
+.pbar .track i{display:block;height:100%;background:var(--neon)}
+.legend{display:flex;gap:14px;font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+/* lists */
+.list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.list li{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:rgba(0,0,0,.2);font-size:13px}
+.list li .tag{font-family:var(--mono);font-size:11px;white-space:nowrap}
+.tag.amber{color:var(--amber)}.tag.red{color:var(--red)}.tag.green{color:var(--neon)}
+.check .n{font-family:var(--display);font-weight:700;font-size:20px;min-width:28px;text-align:right}
+.edl{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+.edl div{display:grid;grid-template-columns:12px 1fr auto auto;gap:10px;align-items:center;font-size:12.5px}
+.edl .sw{width:10px;height:10px;border-radius:2px}
+.edl .c{font-family:var(--mono);color:var(--muted);font-size:11.5px}
+.note{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+.err{color:var(--red)}
+@media (max-width:1100px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}.kpis .kpi:last-child{grid-column:span 2}.s8,.s4,.s5,.s7{grid-column:span 12}}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.wrap{padding-inline:16px}.actions{align-items:flex-start}.kpi .val{font-size:30px}}
+@media (prefers-reduced-motion:no-preference){.spark i,.pbar .track i{transition:width .8s ease}}
+.bar{cursor:pointer}
+.bar:hover rect.b,.bar:focus-visible rect.b{filter:brightness(1.25) drop-shadow(0 0 8px rgba(61,255,143,.7))!important}
+.bar:focus{outline:none}
+.bar:focus-visible rect.hit{stroke:var(--ink);stroke-width:1}
+tr.flash td{animation:flash 2.4s ease-out}
+@keyframes flash{0%,35%{background:rgba(61,255,143,.22)}100%{background:transparent}}
+tr.sel td{box-shadow:inset 0 1px 0 var(--neon),inset 0 -1px 0 var(--neon)}
+tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--neon),inset 0 1px 0 var(--neon),inset 0 -1px 0 var(--neon)}
+.who{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px 4px 4px}
+.who img{width:28px;height:28px;border-radius:50%;object-fit:cover;background:var(--faint)}
+.who .nm{font-size:13px;font-weight:500}
+.role{font-family:var(--mono);font-size:10px;letter-spacing:.14em;padding:3px 8px;border-radius:4px;border:1px solid var(--line2);color:var(--muted)}
+.role.admin{color:var(--bg);background:var(--amber);border-color:var(--amber)}
+.role.viewer{color:var(--neon);border-color:var(--deep)}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line2);box-shadow:none}
+.btn.ghost:hover{border-color:var(--neon);color:var(--neon);background:transparent}
+.preview{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--amber);background:rgba(255,191,71,.08);border-radius:8px;padding:12px 16px;margin-bottom:14px}
+.preview p{margin:0;font-size:13px}
+.preview b{color:var(--amber)}
+.access{font-size:12.5px;color:var(--muted);line-height:1.6}
+.access b{color:var(--ink);font-weight:500}
+.access ol{margin:6px 0 0;padding-left:18px}
+[hidden]{display:none!important}
+.gate{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg);
+  background-image:linear-gradient(rgba(61,255,143,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(61,255,143,.035) 1px,transparent 1px);background-size:28px 28px;overflow:auto}
+.gcard{width:100%;max-width:400px;background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line2);border-radius:12px;padding:28px 26px;box-shadow:0 0 40px rgba(61,255,143,.08)}
+.gcard h2{font-family:var(--display);font-size:24px;margin:6px 0 4px}
+.gcard h2 span{color:var(--neon);text-shadow:0 0 14px rgba(61,255,143,.4)}
+.gcard p{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.5}
+.fld{display:flex;flex-direction:column;gap:6px;margin-bottom:14px}
+.fld label{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.fld input,.fld select,.uform input,.uform select,.utable select{background:#050b08;border:1px solid var(--line2);border-radius:6px;color:var(--ink);font:500 14px var(--body);padding:10px 12px;width:100%}
+.fld input:focus,.fld select:focus,.uform input:focus,.uform select:focus,.utable select:focus{outline:none;border-color:var(--neon);box-shadow:0 0 10px rgba(61,255,143,.25)}
+.gcard .btn{width:100%;padding:12px}
+.msg{font-size:12.5px;min-height:18px;margin:-4px 0 12px}
+.msg.err{color:var(--red)}.msg.ok{color:var(--neon)}
+.uform{display:grid;grid-template-columns:1.2fr 1.5fr 1.2fr .9fr auto;gap:10px;align-items:end;margin-bottom:16px}
+.uform .fld{margin:0}
+.utable{width:100%;min-width:640px}
+.utable td{font-size:13px}
+.utable select{padding:6px 8px;font-size:12.5px;width:auto}
+.lnk{background:transparent;border:1px solid var(--line2);color:var(--ink);font:500 12px var(--body);border-radius:5px;padding:6px 10px;cursor:pointer}
+.lnk:hover,.lnk:focus-visible{border-color:var(--neon);color:var(--neon);outline:none}
+.lnk.danger:hover{border-color:var(--red);color:var(--red)}
+.lnk:disabled{opacity:.4;cursor:not-allowed}
+.inline{display:flex;gap:6px;align-items:center}
+.inline input{background:#050b08;border:1px solid var(--line2);border-radius:5px;color:var(--ink);font:13px var(--body);padding:6px 8px;width:140px}
+@media (max-width:900px){.uform{grid-template-columns:1fr 1fr}.uform .btn{grid-column:1/-1}}
+.tlhead{display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;margin-bottom:10px;font-size:13px;color:var(--muted)}
+.tlhead b{color:var(--ink);font-weight:600}
+.tpill{font-family:var(--mono);font-size:11px;letter-spacing:.1em;padding:4px 10px;border-radius:4px;border:1px solid}
+.tpill.ok{color:var(--neon);border-color:var(--deep);background:rgba(61,255,143,.08)}
+.tpill.late{color:var(--red);border-color:rgba(255,97,97,.6);background:rgba(255,97,97,.1)}
+.tpill.done{color:var(--bg);background:var(--neon);border-color:var(--neon)}
+.tpill.none{color:var(--muted);border-color:var(--line2)}
+#tlsvg text{font-family:var(--mono)}
+#tour{position:fixed;inset:0;z-index:80}
+.tour-shade{position:absolute;inset:0}
+.tour-hole{position:fixed;border-radius:12px;box-shadow:0 0 0 9999px rgba(2,6,4,.78),0 0 0 2px var(--neon),0 0 24px rgba(61,255,143,.45);transition:all .35s ease;pointer-events:none}
+.tour-card{position:fixed;display:flex;gap:12px;align-items:flex-start;background:linear-gradient(180deg,#0e1d16,#08110d);border:1px solid var(--neon);border-radius:14px;padding:14px 16px 14px 10px;box-shadow:0 18px 50px rgba(0,0,0,.6),0 0 30px rgba(61,255,143,.15);transition:top .35s ease,left .35s ease}
+.tour-card.pop{animation:tourpop .35s ease}
+@keyframes tourpop{from{transform:translateY(8px) scale(.97);opacity:.4}to{transform:none;opacity:1}}
+.tour-dex{flex:none;margin-top:-30px}
+.tour-dex .dex-arm{transform-origin:78px 90px;animation:dexwave 1.6s ease-in-out infinite}
+.tour-dex .dex-clap{transform-origin:60px 26px;animation:dexclap 2.4s ease-in-out infinite}
+@keyframes dexwave{0%,100%{transform:rotate(0)}50%{transform:rotate(-14deg)}}
+@keyframes dexclap{0%,80%,100%{transform:rotate(0)}86%{transform:rotate(-10deg)}92%{transform:rotate(8deg)}}
+.tour-body{min-width:0;flex:1}
+.tour-step{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--green)}
+.tour-body h3{font-family:var(--display);font-size:18px;margin:4px 0 6px;color:var(--ink)}
+.tour-text{margin:0 0 12px;font-size:13.5px;line-height:1.55;color:#b8d9c8}
+.tour-nav{display:flex;align-items:center;gap:8px}
+.tour-nav .sp{flex:1}
+.tour-nav .btn{padding:8px 14px}
+.helpbtn{display:inline-flex;align-items:center;gap:6px;padding:4px 12px 4px 6px}
+.helpbtn svg{display:block}
+@media (prefers-reduced-motion:reduce){.tour-dex .dex-arm,.tour-dex .dex-clap,.tour-card.pop{animation:none}.tour-hole,.tour-card{transition:none}}
+@media (max-width:560px){.tour-dex{display:none}.tour-card{padding:14px}}
+.search{position:relative;max-width:520px;margin-bottom:14px}
+.sbox{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:0 12px;transition:border-color .15s,box-shadow .15s}
+.sbox:focus-within{border-color:var(--neon);box-shadow:0 0 14px rgba(61,255,143,.25)}
+.sbox svg{flex:none}
+.sbox input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--ink);font:500 14px var(--body);padding:12px 0}
+.sbox input::placeholder{color:var(--muted)}
+.sclear{background:transparent;border:0;color:var(--muted);cursor:pointer;font:500 12px var(--mono);padding:4px 6px;border-radius:4px}
+.sclear:hover,.sclear:focus-visible{color:var(--ink);outline:1px solid var(--line2)}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:20;background:#07100c;border:1px solid var(--line2);border-radius:8px;padding:6px;margin:0;list-style:none;box-shadow:0 12px 30px rgba(0,0,0,.6);max-height:320px;overflow:auto}
+.sug li{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 10px;border-radius:6px;cursor:pointer}
+.sug li[aria-selected="true"],.sug li:hover{background:rgba(61,255,143,.08)}
+.sug .nm{font-weight:500}
+.sug .nm mark{background:transparent;color:var(--neon);text-shadow:0 0 8px rgba(61,255,143,.5)}
+.sug .pc{font-family:var(--mono);font-size:12px;color:var(--neon);text-align:right}
+.sug .mt{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
+.sug .hd{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--green);padding:6px 10px 4px;cursor:default}
+.sug .hd:hover{background:transparent}
+.sug .empty{color:var(--muted);cursor:default}
+.scur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+.scur b{color:var(--neon);font-weight:500}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.tab{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 14px;cursor:pointer}
+.tab:hover{color:var(--ink);border-color:var(--line2)}
+.tab[aria-selected="true"]{color:var(--neon);border-color:var(--neon);box-shadow:0 0 12px rgba(61,255,143,.25) inset}
+.tab:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+.tab .c{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:6px}
+.projs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
+.proj{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:rgba(0,0,0,.25);cursor:pointer;text-align:left;color:inherit;font:inherit}
+.proj:hover{border-color:var(--line2)}
+.proj.on{border-color:var(--neon)}
+.proj h3{font-family:var(--display);font-size:16px;margin:0 0 6px;letter-spacing:.04em}
+.proj .meta{display:grid;grid-template-columns:repeat(4,auto);gap:4px 14px;font-size:11.5px;color:var(--muted)}
+.proj .meta b{display:block;font-family:var(--mono);font-size:15px;color:var(--ink);font-weight:500}
+.proj .nx{grid-column:1/-1;font-family:var(--mono);font-size:11.5px;color:var(--amber);border-top:1px solid var(--line);padding-top:8px}
+.proj .nx.ok{color:var(--neon)}
+td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-space:nowrap}
+.vira-nudge{position:fixed;right:24px;bottom:140px;z-index:70;display:flex;gap:10px;align-items:flex-end;max-width:min(420px,calc(100vw - 32px));animation:nudgeIn .5s cubic-bezier(.2,1.4,.4,1)}
+.vira-nudge .bubble{background:linear-gradient(180deg,#123024,#0a1712);border:2px solid var(--neon);border-radius:16px 16px 4px 16px;padding:14px 38px 14px 16px;position:relative;box-shadow:0 14px 40px rgba(0,0,0,.6),0 0 0 4px rgba(61,255,143,.15),0 0 34px rgba(61,255,143,.45);animation:nudgeGlow 1.8s ease-in-out infinite}
+.vira-nudge .vlabel{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--neon);margin-bottom:6px;font-weight:600}
+.vira-nudge .txt{font-size:15.5px;line-height:1.5;color:#fff;font-weight:500}
+.vira-nudge .x{position:absolute;top:8px;right:10px;background:none;border:0;color:var(--muted);font-size:20px;cursor:pointer;line-height:1}
+.vira-nudge .x:hover,.vira-nudge .x:focus-visible{color:var(--neon);outline:none}
+.vira-nudge .vbot{animation:nudgeBob 2.4s ease-in-out infinite}
+@keyframes nudgeIn{from{transform:translateY(30px) scale(.9);opacity:0}to{transform:none;opacity:1}}
+@keyframes nudgeGlow{0%,100%{box-shadow:0 14px 40px rgba(0,0,0,.6),0 0 0 4px rgba(61,255,143,.12),0 0 24px rgba(61,255,143,.35)}50%{box-shadow:0 14px 40px rgba(0,0,0,.6),0 0 0 8px rgba(61,255,143,.22),0 0 46px rgba(61,255,143,.7)}}
+@keyframes nudgeBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@media (prefers-reduced-motion:reduce){.vira-nudge,.vira-nudge .bubble,.vira-nudge .vbot{animation:none}}
+@media (max-width:560px){.vira-nudge{right:16px;bottom:90px}}
+</style>
+</head>
+<body>
+
+
+<div class="gate" id="gate">
+  <div class="gcard">
+    <div class="eyebrow">Brikkin · Operations &amp; Execution</div>
+    <div id="g-login">
+      <h2>Sign in to <span>Command Deck</span></h2>
+      <p>Every project. Every stage. One screen.<br>Use the email ID and password your admin gave you.</p>
+      <form id="loginform" novalidate>
+        <div class="fld"><label for="lemail">Email ID</label><input id="lemail" type="email" autocomplete="username" required></div>
+        <div class="fld"><label for="lpass">Password</label><input id="lpass" type="password" autocomplete="current-password" required></div>
+        <div class="msg" id="lmsg" role="alert"></div>
+        <button class="btn" type="submit" id="lbtn">Sign in</button>
+      </form>
+    </div>
+  </div>
+</div>
+<div class="wrap" id="app" hidden>
+  <header>
+    <div>
+      <div class="eyebrow">Brikkin · Operations &amp; Execution</div>
+      <h1 id="h1">Brikkin <span>Command Deck</span></h1>
+      <div class="sub" id="asof"></div>
+    </div>
+    <div class="actions">
+      <div class="btnrow"><div class="who" id="who"><span class="nm" id="whonm"></span><span class="role" id="whorole"></span></div></div>
+      <div class="btnrow"><button class="btn ghost helpbtn" id="tourbtn" type="button" aria-label="Replay the guided tour with VIRA"><span id="tourbtnicon"></span>Ask VIRA</button><button class="btn ghost" id="refresh" type="button">Refresh data</button><button class="btn ghost" id="pwbtn" type="button">Change password</button><button class="btn ghost" id="logout" type="button">Sign out</button></div>
+      <div class="src" id="src"></div>
+      <div class="btnrow"><a class="btn" href="https://barterro.com/verticalhelth/" target="_blank" rel="noopener" style="text-decoration:none;background:linear-gradient(135deg,#1d4ed8,#3b82f6);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 18px rgba(59,130,246,.45)">Vertical Helth ↗</a><a class="btn" href="https://barterro.com/brikkin_pool/" target="_blank" rel="noopener" style="text-decoration:none;background:linear-gradient(135deg,#b45309,#f59e0b);color:#fff;border:1px solid rgba(255,255,255,.18);box-shadow:0 0 18px rgba(245,158,11,.45)">Brikkin Pool ↗</a></div>
+    </div>
+  </header>
+
+  <div class="search" id="search">
+    <div class="sbox">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="text" role="combobox" aria-expanded="false" aria-controls="sug" aria-autocomplete="list" autocomplete="off" placeholder="Search a project" aria-label="Search projects">
+      <button class="sclear" id="qclear" type="button" hidden>Clear</button>
+    </div>
+    <ul class="sug" id="sug" role="listbox" hidden></ul>
+    <div class="scur" id="scur"></div>
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <div class="grid" style="margin-top:14px">
+    <div class="panel s4">
+      <div class="ph"><h2>Overall Completion</h2><span class="hint">avg of applicable stages</span></div>
+      <div class="gaugewrap"><svg id="gauge" viewBox="0 0 260 160" width="100%" style="max-width:300px"></svg></div>
+      <div class="minis" id="minis"></div>
+    </div>
+    <div class="panel s8">
+      <div class="ph"><h2>Production Pipeline</h2><span class="hint">deliverables done / applicable at each stage</span></div>
+      <div class="scroll"><svg id="pipe" viewBox="0 0 860 250" width="100%" style="min-width:640px"></svg></div>
+    </div>
+
+    <div class="panel s12" id="tlpanel">
+      <div class="ph"><h2>Project Timeline</h2><span class="hint" id="tlhint">planned deadline per stage</span></div>
+      <div class="tlhead" id="tlhead"></div>
+      <div class="scroll"><svg id="tlsvg" width="100%" style="min-width:680px"></svg></div>
+    </div>
+
+    <div class="panel s12">
+      <div class="ph"><h2>Completion by Deliverable</h2><span class="hint">% of applicable stages done · click a bar to open it in the tracker</span></div>
+      <div class="scroll"><svg id="bars" viewBox="0 0 860 340" width="100%" style="min-width:680px"></svg></div>
+    </div>
+    <div class="panel s12" id="paypanel" hidden>
+      <div class="ph"><h2>Payment Milestones</h2><span class="role admin">ADMIN ONLY</span></div>
+      <div id="paybody"></div>
+    </div>
+
+    <div class="panel s12">
+      <div class="ph"><h2>Deliverable Tracker</h2>
+        <div class="legend"><span><i class="chip d"></i>Done</span><span><i class="chip p"></i>Pending</span><span><i class="chip n"></i>Not applicable</span></div>
+      </div>
+      <div class="scroll"><table id="tbl"></table></div>
+    </div>
+
+    <div class="panel s7" id="openpanel" hidden>
+      <div class="ph"><h2>Open Items</h2><span class="hint">next pending stage per deliverable</span></div>
+      <ul class="list" id="open"></ul>
+    </div>
+    <div class="panel s5" id="checkspanel" hidden>
+      <div class="ph"><h2>Data Checks</h2><span class="hint">should all be 0</span></div>
+      <ul class="list" id="checks"></ul>
+      <p class="note">Fix these in the project tabs of the Google Sheet, then press Refresh data. Where a tab has no Feedback column, Client OK counts as done once the Live Link is posted.</p>
+    </div>
+    <div class="panel s12" id="pwpanel" hidden>
+      <div class="ph"><h2>Change Password</h2></div>
+      <form class="uform" id="pwform" novalidate style="grid-template-columns:1fr 1fr auto">
+        <div class="fld"><label for="pwold">Current password</label><input id="pwold" type="password" autocomplete="current-password"></div>
+        <div class="fld"><label for="pwnew">New password (min 6)</label><input id="pwnew" type="password" autocomplete="new-password"></div>
+        <button class="btn" type="submit">Update</button>
+      </form>
+      <div class="msg" id="pwmsg" role="status"></div>
+    </div>
+    <div class="panel s12" id="userspanel" hidden>
+      <div class="ph"><h2>Users</h2><span class="role admin">ADMIN ONLY</span></div>
+      <form class="uform" id="uform" novalidate>
+        <div class="fld"><label for="uname">Name</label><input id="uname" type="text"></div>
+        <div class="fld"><label for="uemail">Email ID</label><input id="uemail" type="email"></div>
+        <div class="fld"><label for="upass">Password</label><input id="upass" type="text" autocomplete="off"></div>
+        <div class="fld"><label for="urole">Role</label><select id="urole"><option value="user">User</option><option value="admin">Admin</option></select></div>
+        <button class="btn" type="submit" id="ubtn">Add user</button>
+      </form>
+      <div class="msg" id="umsg" role="status"></div>
+      <div class="scroll"><table class="utable" id="utable"></table></div>
+      <p class="note">Users are saved in the hidden _Users tab of your Google Sheet, with passwords stored as hashes. Share each new user's email ID and password with them directly. Users see all projects; admins also manage users.</p>
+    </div>
+    <div class="panel s12" id="logpanel" hidden>
+      <div class="ph"><h2>Login History</h2><span class="role admin">ADMIN ONLY</span></div>
+      <div class="uform" style="grid-template-columns:minmax(0,320px) auto 1fr;margin-bottom:12px">
+        <div class="fld"><label for="logfilter">Show</label><select id="logfilter"><option value="">All users</option></select></div>
+        <button class="btn ghost" id="logrefresh" type="button">Refresh</button>
+        <div class="msg" id="logmsg" style="margin:0;align-self:center"></div>
+      </div>
+      <div class="scroll" style="max-height:420px;overflow-y:auto"><table class="utable" id="logtable"></table></div>
+      <p class="note">Every sign-in attempt is saved in the hidden _LoginLog tab of the Google Sheet (latest 2,000 kept).</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const TODAY = new Date(); TODAY.setHours(0,0,0,0);
+const STAGES = ["Script","Recce","Talent","Shoot","First Cut","Client OK","Live Link"];
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtINR = n => "₹" + Math.round(n).toLocaleString("en-IN");
+const fmtDate = d => d ? d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+const isNA = v => /^n\/?a$/i.test(String(v||"").trim());
+const isURL = v => /^https?:\/\//i.test(String(v||"").trim());
+
+let PROJECTS = [], FILTER = null, PAY = null;
+
+function parseDate(v){
+  if (v instanceof Date) return {d:isNaN(v)?null:v, text:false};
+  const s = String(v||"").trim(); if(!s || isNA(s)) return {d:null,text:false};
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const [y,m,dd]=s.split("-").map(Number); return {d:new Date(y,m-1,dd),text:false}; }
+  const t = Date.parse(s.replace(/(\d+)(st|nd|rd|th)/i,"$1"));
+  return {d:isNaN(t)?null:new Date(t), text:true};
+}
+function title(s){return s.toLowerCase().replace(/\b\w/g,c=>c.toUpperCase());}
+function shortName(n){
+  let m = n.match(/LIT Campaign\s*-\s*(\d+)/i); if(m) return "LIT "+m[1];
+  m = n.match(/Evangelist\s*-\s*(\d+)/i); if(m) return "Evang. "+m[1];
+  if(/santacruz/i.test(n)) return "Santacruz";
+  if(/location nexus/i.test(n)) return "Loc. Nexus";
+  return n.replace(/'s AV/i," AV").split(/[\s|–-]+/).filter(Boolean).slice(0,2).join(" ");
+}
+
+function enrichProject(p){
+  const counts={}; p.rows.forEach(r=>counts[r.name]=(counts[r.name]||0)+1);
+  return p.rows.map((r,i)=>{
+    const eq=(v,x)=>String(v||"").trim().toLowerCase()===x.toLowerCase();
+    const liveOK = isURL(r.live);
+    const clientOK = p.hasFeedback ? /delivered|approved/i.test(r.feedback||"") : liveOK;
+    const st = [
+      isNA(r.script)?"n":eq(r.script,"Final")?"d":"p",
+      isNA(r.recce)?"n":eq(r.recce,"Done")?"d":"p",
+      isNA(r.talent)?"n":eq(r.talent,"Locked")?"d":"p",
+      isNA(r.shoot)?"n":eq(r.shoot,"Done")?"d":"p",
+      isNA(r.firstCut)?"n":/^(final|live|shared|approved)$/i.test(String(r.firstCut||"").trim())?"d":"p",
+      clientOK?"d":"p",
+      liveOK?"d":"p"
+    ];
+    const app = st.filter(x=>x!=="n").length, done = st.filter(x=>x==="d").length;
+    const pi = st.indexOf("p");
+    const sd = parseDate(r.shootDate);
+    let display=r.name, short=shortName(r.name);
+    if(counts[r.name]>1){
+      const m=String(r.scriptDoc||"").match(/for\s+(.+?)\s*(\(|$)/i);
+      const tag = m? title(m[1].trim()) : "#"+(r.sr||i+1);
+      display = r.name.split("|")[0].trim()+" – "+tag; short = tag.replace(/^Mehta\s+/i,"");
+    }
+    return {...r, project:p.name, display, short, st, pct: app?done/app:0, current: pi<0?"Completed":STAGES[pi]+" pending",
+      sd:sd.d, sdText:sd.text, liveText: String(r.live||"").trim() && !liveOK, noFeedbackCol:!p.hasFeedback};
+  });
+}
+
+function arc(cx,cy,r,a0,a1){
+  const p=a=>[cx+r*Math.cos(a*Math.PI/180), cy-r*Math.sin(a*Math.PI/180)];
+  const [x0,y0]=p(a0),[x1,y1]=p(a1); const large=Math.abs(a0-a1)>180?1:0;
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)} A${r} ${r} 0 ${large} ${a0>a1?1:0} ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+function ring(pct,size,label,color){
+  const r=size/2-6, c=2*Math.PI*r, col=color||"var(--neon)";
+  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--faint)" stroke-width="5"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round"
+      stroke-dasharray="${(c*pct).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${size/2} ${size/2})" style="filter:drop-shadow(0 0 4px ${col})"/>
+    <text x="50%" y="52%" text-anchor="middle" dominant-baseline="middle" fill="var(--ink)" font-size="${size/4.6}" font-weight="600">${label}</text></svg>`;
+}
+
+let SUG=[], SUGI=-1;
+function hl(text,q){ if(!q) return esc(text); const i=text.toLowerCase().indexOf(q.toLowerCase()); if(i<0) return esc(text);
+  return esc(text.slice(0,i))+"<mark>"+esc(text.slice(i,i+q.length))+"</mark>"+esc(text.slice(i+q.length)); }
+function projStats(p){const N=p.rows.length, pct=N?p.rows.reduce((a,r)=>a+r.pct,0)/N:0; return {N,pct,open:p.rows.filter(r=>r.pct<1).length};}
+function openSug(showAll){
+  const q=showAll?"":$("q").value.trim(), ql=q.toLowerCase();
+  const list=[];
+  if(!q || "all projects overall".includes(ql)){ const allRows=PROJECTS.flatMap(p=>p.rows), n=allRows.length;
+    list.push({k:"All",label:"All Projects",meta:`Overall view · ${PROJECTS.length} projects · ${n} deliverables`,pc:n?Math.round(allRows.reduce((a,r)=>a+r.pct,0)/n*100)+"%":""}); }
+  PROJECTS.forEach(p=>{
+    const hitName=p.name.toLowerCase().includes(ql);
+    const hitRows=q? p.rows.filter(r=>(r.display+" "+(r.editor||"")+" "+(r.concept||"")).toLowerCase().includes(ql)) : [];
+    if(!q || hitName || hitRows.length){const st=projStats(p);
+      list.push({k:p.name,label:p.name,meta: (!hitName && hitRows.length)? `matches: ${hitRows.slice(0,3).map(r=>r.short).join(", ")}${hitRows.length>3?" …":""}` : `${st.N} deliverables · ${st.open} open`,pc:Math.round(st.pct*100)+"%"});}
+  });
+  SUG=list; SUGI=list.length?0:-1;
+  $("sug").innerHTML = `<li class="hd" role="presentation">${q?"SUGGESTIONS":"SAVED PROJECTS"}</li>`+
+    (list.length? list.map((o,i)=>`<li role="option" id="opt${i}" data-i="${i}" aria-selected="${i===SUGI}"><span class="nm">${hl(o.label,q)}</span><span class="pc">${o.pc}</span><span class="mt">${esc(o.meta)}</span></li>`).join("")
+      : `<li class="empty" role="presentation">No project matches "${esc(q)}"</li>`);
+  $("sug").hidden=false; $("q").setAttribute("aria-expanded","true");
+  $("q").setAttribute("aria-activedescendant", SUGI>=0?"opt"+SUGI:"");
+  $("sug").querySelectorAll("li[role=option]").forEach(li=>li.onmousedown=e=>{e.preventDefault(); pick(+li.dataset.i);});
+}
+function closeSug(){ $("sug").hidden=true; $("q").setAttribute("aria-expanded","false"); }
+function moveSug(d){ if(!SUG.length) return; SUGI=(SUGI+d+SUG.length)%SUG.length;
+  $("sug").querySelectorAll("li[role=option]").forEach((li,i)=>li.setAttribute("aria-selected",i===SUGI));
+  $("q").setAttribute("aria-activedescendant","opt"+SUGI); document.getElementById("opt"+SUGI)?.scrollIntoView({block:"nearest"}); }
+function pick(i){ const o=SUG[i]; if(!o) return; FILTER=o.k; $("q").value = o.k==="All"?"All Projects":o.label; closeSug(); $("q").blur(); render(); }
+function renderTabs(){
+  $("qclear").hidden = !$("q").value;
+  const lbl = FILTER==="All"?"All Projects":FILTER;
+  if(document.activeElement!==$("q")) $("q").value = lbl;
+  $("scur").innerHTML = FILTER==="All"? `Showing <b>all ${PROJECTS.length} projects together</b> · search to open one project` : `Showing <b>${esc(FILTER)}</b> · ${PROJECTS.length} projects saved, search to switch`;
+}
+$("q").addEventListener("focus",()=>{ $("q").select(); openSug(true); });
+$("q").addEventListener("input",()=>{openSug(); $("qclear").hidden=false;});
+$("q").addEventListener("blur",()=>setTimeout(()=>{closeSug(); if(!$("q").value.trim()){ $("q").value=FILTER==="All"?"All Projects":FILTER; $("qclear").hidden=false; }},120));
+$("q").addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"){e.preventDefault(); if($("sug").hidden) openSug(true); else moveSug(1);}
+  else if(e.key==="ArrowUp"){e.preventDefault(); moveSug(-1);}
+  else if(e.key==="Enter"){e.preventDefault(); if(SUGI>=0) pick(SUGI);}
+  else if(e.key==="Escape"){closeSug();}
+});
+$("qclear").addEventListener("click",()=>{$("q").value=""; $("qclear").hidden=true; $("q").focus(); openSug(true);});
+function renderProjects(){
+  $("projs").innerHTML = PROJECTS.map(p=>{
+    const rs=p.rows, N=rs.length, pct=N?rs.reduce((a,r)=>a+r.pct,0)/N:0;
+    const ok=rs.filter(r=>r.st[5]==="d").length, live=rs.filter(r=>r.st[6]==="d").length, open=rs.filter(r=>r.pct<1);
+    const nxt = open.length? open.sort((a,b)=>a.pct-b.pct).slice(0,2).map(r=>r.short+": "+r.current).join(" · ") : "All deliverables complete";
+    return `<button class="proj ${FILTER===p.name?"on":""}" data-k="${esc(p.name)}">${ring(pct,78,Math.round(pct*100)+"%",pct>=1?"var(--neon)":pct>=.7?"var(--green)":"var(--amber)")}
+      <div><h3>${esc(p.name)}</h3><div class="meta"><span><b>${N}</b>videos</span><span><b>${ok}</b>client OK</span><span><b>${live}</b>live</span><span><b>${open.length}</b>open</span></div></div>
+      <div class="nx ${open.length?"":"ok"}">${esc(nxt)}</div></button>`;}).join("");
+  $("projs").querySelectorAll(".proj").forEach(b=>b.onclick=()=>{FILTER = FILTER===b.dataset.k? "All" : b.dataset.k; render();});
+}
+
+function render(){
+  renderTabs();
+  const all = FILTER==="All";
+  const rows = all? PROJECTS.flatMap(p=>p.rows) : (PROJECTS.find(p=>p.name===FILTER)?.rows||[]);
+  const N = rows.length || 1;
+  $("h1").innerHTML = all? `Brikkin <span>Command Deck</span>` : `${esc(FILTER)} <span>Command Deck</span>`;
+  $("asof").textContent = `${all?PROJECTS.length+" projects · ":""}${rows.length} deliverables · as of ${fmtDate(TODAY)}`;
+
+  const delivered = rows.filter(r=>r.st[5]==="d").length;
+  const wip = rows.filter(r=>/wip/i.test(r.bucket||"")).length;
+  const shootApp = rows.filter(r=>r.st[3]!=="n"), shootsDone = shootApp.filter(r=>r.st[3]==="d").length;
+  const liveDone = rows.filter(r=>r.st[6]==="d").length;
+  const upcoming = rows.filter(r=>r.sd && r.sd>TODAY && r.st[3]!=="d");
+  const overall = rows.length? rows.reduce((a,r)=>a+r.pct,0)/rows.length : 0;
+  const pay = PAY ? computePayments(all) : null;
+  const k = [
+    ["Total Deliverables", rows.length, all? `across ${PROJECTS.length} projects` : "", 1],
+    ["Delivered / Approved", delivered, `${Math.round(delivered/N*100)}% of total`, delivered/N],
+    ["Work in Progress", wip, "content bucket = WIP", wip/N, wip?"warn":""],
+    ["Shoots Done", shootsDone, shootApp.length-shootsDone? `${shootApp.length-shootsDone} still to shoot` : (shootApp.length? "all shoots done":"no shoots needed"), shootApp.length? shootsDone/shootApp.length : 1],
+    ["Live on Social", liveDone, `${rows.length-liveDone} yet to go live`, liveDone/N],
+    ["Upcoming Shoots", upcoming.length, upcoming.length? upcoming.map(r=>r.short+" · "+fmtDate(r.sd)).join(", ") : "none scheduled", null]
+  ];
+  if(pay){
+    k.push(pay.ms.length
+      ? ["Payment Earned", Math.round(pay.earnedPct*100)+"%", `${Math.round(pay.recPct*100)}% received · ${Math.round(pay.duePct*100)}% due now`, pay.earnedPct, pay.duePct>0?"warn":""]
+      : ["Payment Earned", "Not tracked", "add payment milestones in the project tab", null, "dim"]);
+  }
+  $("kpis").style.setProperty("--n", k.length);
+  renderPayments(pay, all);
+  renderTimeline(all);
+  $("kpis").innerHTML = k.map(([l,v,f,p,cls])=>`<div class="panel kpi"><div class="lab">${l}</div><div class="val ${cls||""}">${esc(v)}</div>
+    ${p!=null?`<div class="spark"><i style="width:${Math.round(p*100)}%"></i></div>`:""}<div class="foot">${esc(f)}</div></div>`).join("");
+
+  // gauge
+  const g=$("gauge"), a1 = 180-180*overall; let ticks="";
+  for(let i=0;i<=10;i++){const a=180-18*i, r1=100, r2=i%5?94:88, rad=a*Math.PI/180;
+    ticks+=`<line x1="${130+r1*Math.cos(rad)}" y1="${140-r1*Math.sin(rad)}" x2="${130+r2*Math.cos(rad)}" y2="${140-r2*Math.sin(rad)}" stroke="var(--line2)" stroke-width="1.5"/>`;}
+  const na=(180-overall*180)*Math.PI/180;
+  g.innerHTML = `<defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#0e5a38"/><stop offset="1" stop-color="#3dff8f"/></linearGradient></defs>
+    <path d="${arc(130,140,112,180,0)}" fill="none" stroke="var(--faint)" stroke-width="16"/>
+    <path d="${arc(130,140,112,180,Math.max(a1,0.01))}" fill="none" stroke="url(#gg)" stroke-width="16" style="filter:drop-shadow(0 0 6px rgba(61,255,143,.6))"/>
+    ${ticks}
+    <line x1="130" y1="140" x2="${130+78*Math.cos(na)}" y2="${140-78*Math.sin(na)}" stroke="var(--ink)" stroke-width="2.5" stroke-linecap="round"/>
+    <circle cx="130" cy="140" r="6" fill="var(--neon)"/>
+    <text x="130" y="112" text-anchor="middle" fill="var(--neon)" font-size="34" font-weight="600" style="font-family:'Chakra Petch',sans-serif">${Math.round(overall*100)}%</text>
+    <text x="18" y="156" fill="var(--muted)" font-size="10">0</text><text x="232" y="156" fill="var(--muted)" font-size="10">100</text>`;
+  $("minis").innerHTML = [[delivered/N,"Client approved"],[shootApp.length? shootsDone/shootApp.length:1,"Shoots done"],[liveDone/N,"Live links posted"]]
+    .map(([p,t])=>`<div class="mini">${ring(p,72,Math.round(p*100)+"%")}<div class="t">${t}</div></div>`).join("");
+
+  // pipeline
+  const stats = STAGES.map((s,i)=>{const app=rows.filter(r=>r.st[i]!=="n").length, d=rows.filter(r=>r.st[i]==="d").length; return {s,app,d,p:app?d/app:1};});
+  const minP = Math.min(...stats.filter(s=>s.app).map(s=>s.p));
+  let ps = `<defs><linearGradient id="pl" x1="0" x2="1"><stop offset="0" stop-color="#3dff8f"/><stop offset="1" stop-color="#1fc46a"/></linearGradient></defs>`;
+  const xs = stats.map((_,i)=>60+i*123), rad=i=>30+i*1.8;
+  ps += `<line x1="${xs[0]}" y1="95" x2="${xs[6]}" y2="95" stroke="var(--line2)" stroke-width="2" stroke-dasharray="4 5"/>`;
+  stats.forEach((s,i)=>{
+    const x=xs[i], r=rad(i), c=2*Math.PI*r, bn = s.app && s.p===minP && s.p<1, col = !s.app?"var(--faint)":bn?"var(--amber)":"var(--neon)";
+    if(i<6) ps+=`<path d="M${x+r+4} 95 L${xs[i+1]-rad(i+1)-8} 95" stroke="url(#pl)" stroke-width="2" opacity="${s.app?s.p:0.2}"/><path d="M${xs[i+1]-rad(i+1)-14} 90 l6 5 -6 5" fill="none" stroke="var(--green)" stroke-width="1.5" opacity=".7"/>`;
+    ps+=`<circle cx="${x}" cy="95" r="${r+8}" fill="rgba(61,255,143,.04)" stroke="var(--line)"/>
+      <circle cx="${x}" cy="95" r="${r}" fill="var(--panel)" stroke="var(--faint)" stroke-width="6"/>
+      ${s.app?`<circle cx="${x}" cy="95" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${(c*s.p).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 ${x} 95)" style="filter:drop-shadow(0 0 5px ${bn?"rgba(255,191,71,.7)":"rgba(61,255,143,.7)"})"/>`:""}
+      <text x="${x}" y="92" text-anchor="middle" fill="${s.app?"var(--ink)":"var(--muted)"}" font-size="15" font-weight="600">${s.app?Math.round(s.p*100)+"%":"NA"}</text>
+      <text x="${x}" y="109" text-anchor="middle" fill="var(--muted)" font-size="10.5">${s.d}/${s.app}</text>
+      <text x="${x}" y="${95+r+30}" text-anchor="middle" fill="var(--ink)" font-size="12.5" style="font-family:'Chakra Petch',sans-serif;letter-spacing:.06em">${s.s.toUpperCase()}</text>
+      <text x="${x}" y="30" text-anchor="middle" fill="var(--muted)" font-size="10">STAGE ${i+1}</text>`;
+    if(bn) ps+=`<rect x="${x-44}" y="${95+r+40}" width="88" height="18" rx="3" fill="rgba(255,191,71,.12)" stroke="var(--amber)"/><text x="${x}" y="${95+r+53}" text-anchor="middle" fill="var(--amber)" font-size="10">BOTTLENECK</text>`;
+  });
+  $("pipe").innerHTML = ps;
+
+  // bars
+  const W=860,H=340,L=44,R=12,T=34,B=64, n=rows.length||1, bw=(W-L-R)/n;
+  let bs=`<defs><linearGradient id="bg" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#0e5a38"/><stop offset="1" stop-color="#3dff8f"/></linearGradient>
+    <linearGradient id="ba" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#5a3f0e"/><stop offset="1" stop-color="#ffbf47"/></linearGradient></defs>`;
+  [0,25,50,75,100].forEach(v=>{const y=T+(H-T-B)*(1-v/100); bs+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-dasharray="${v?"3 4":"0"}"/><text x="${L-8}" y="${y+3}" text-anchor="end" fill="var(--muted)" font-size="10">${v}%</text>`;});
+  let prev=null, start=0;
+  const groups=[];
+  rows.forEach((r,i)=>{ if(r.project!==prev){ if(prev!==null) groups.push([prev,start,i]); prev=r.project; start=i; } });
+  if(prev!==null) groups.push([prev,start,rows.length]);
+  if(all && groups.length>1) groups.forEach(([p,s,e],gi)=>{
+    const x0=L+s*bw, x1=L+e*bw;
+    if(gi>0) bs+=`<line x1="${x0}" x2="${x0}" y1="${T-18}" y2="${H-B}" stroke="var(--line2)" stroke-dasharray="2 4"/>`;
+    bs+=`<text x="${(x0+x1)/2}" y="${T-18}" text-anchor="middle" fill="var(--green)" font-size="10.5" letter-spacing="1">${esc(p.toUpperCase())}</text>`;
+  });
+  rows.forEach((r,i)=>{const h=(H-T-B)*r.pct, w=Math.min(bw*0.6,48), x=L+i*bw+(bw-w)/2, y=H-B-h, full=r.pct>=1;
+    bs+=`<g class="bar" data-i="${i}" tabindex="0" role="button" aria-label="${esc(r.display)}, ${Math.round(r.pct*100)}% complete. Show in tracker">
+      <rect class="hit" x="${L+i*bw}" y="${T-10}" width="${bw}" height="${H-B-T+60}" fill="transparent"/>
+      <rect class="b" x="${x}" y="${y}" width="${w}" height="${Math.max(h,1)}" rx="2" fill="url(#${full?"bg":"ba"})" style="filter:drop-shadow(0 0 4px ${full?"rgba(61,255,143,.45)":"rgba(255,191,71,.35)"})"><title>${esc(r.display)}: ${Math.round(r.pct*100)}% · click to see in tracker</title></rect>
+      <text x="${x+w/2}" y="${y-6}" text-anchor="middle" fill="${full?"var(--neon)":"var(--amber)"}" font-size="10.5">${Math.round(r.pct*100)}</text>
+      <text transform="translate(${x+w/2},${H-B+14}) rotate(-35)" text-anchor="end" fill="var(--muted)" font-size="10.5">${esc(r.short)}</text></g>`;});
+  $("bars").innerHTML=bs;
+  $("bars").querySelectorAll(".bar").forEach(g=>{
+    const go=()=>jumpTo(+g.dataset.i);
+    g.addEventListener("click",go);
+    g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+  });
+
+  // table
+  $("tbl").innerHTML = `<thead><tr><th>Sr</th>${all?"<th>Project</th>":""}<th>Deliverable</th><th>Concept</th><th>Editor</th><th>Shoot date</th>${STAGES.map(s=>`<th>${s}</th>`).join("")}<th>Complete</th><th>Current stage</th><th>Feedback</th></tr></thead><tbody>`+
+    rows.map((r,i)=>`<tr id="row${i}"><td class="num">${i+1}</td>${all?`<td class="proj-c">${esc(r.project)}</td>`:""}<td>${esc(r.display)}</td><td>${esc(r.concept)}</td><td>${esc(r.editor)}</td><td class="num">${r.sd?fmtDate(r.sd):isNA(r.shootDate)?"NA":"—"}</td>
+      ${r.st.map((s,j)=>`<td><i class="chip ${s}" title="${STAGES[j]}: ${s==="d"?"Done":s==="p"?"Pending":"Not applicable"}"></i></td>`).join("")}
+      <td><div class="pbar"><div class="track"><i style="width:${Math.round(r.pct*100)}%;${r.pct<1?"background:var(--amber)":""}"></i></div><span class="num">${Math.round(r.pct*100)}%</span></div></td>
+      <td><span class="stage ${r.pct>=1?"ok":"pend"}">${r.current}</span></td><td style="min-width:160px;color:var(--muted)">${esc(r.feedback)||"—"}</td></tr>`).join("")+"</tbody>";
+
+  // open items
+  const open = rows.filter(r=>r.pct<1).sort((a,b)=>a.pct-b.pct);
+  $("open").innerHTML = open.length? open.map(r=>`<li><span>${all?`<span style="color:var(--green);font-family:var(--mono);font-size:11px">${esc(r.project)}</span><br>`:""}${esc(r.display)}</span><span class="tag amber">${r.current} · ${Math.round(r.pct*100)}%</span></li>`).join("")
+    : `<li><span>All deliverables complete</span><span class="tag green">0 open</span></li>`;
+
+  // checks
+  const lab = r => (all?r.project.split(" ")[0]+": ":"")+r.short;
+  const missingFb = (all?PROJECTS:PROJECTS.filter(p=>p.name===FILTER)).filter(p=>!p.hasFeedback);
+  const checks = [
+    ["Shoot marked Done but date is in the future (day/month swapped?)", rows.filter(r=>r.sd && r.sd>TODAY && r.st[3]==="d").map(lab)],
+    ["Shoot dates typed as text, not real dates", rows.filter(r=>r.sdText).map(lab)],
+    ["Deliverables with no shoot date", rows.filter(r=>!String(r.shootDate||"").trim() && r.st[3]!=="n").map(lab)],
+    ["Live Link filled but not a link", rows.filter(r=>r.liveText).map(r=>lab(r)+' ("'+String(r.live).trim()+'")')],
+    ["Deliverables with no client status (Feedback)", rows.filter(r=>!r.noFeedbackCol && !String(r.feedback||"").trim()).map(lab)],
+    ["Project tabs without a Feedback column", missingFb.map(p=>p.name)]
+  ];
+  $("checks").innerHTML = checks.map(([t,list])=>`<li class="check"><span>${t}${list.length?`<br><span style="color:var(--muted);font-size:11.5px">${esc(list.join(", "))}</span>`:""}</span><span class="n ${list.length?"tag red":"tag green"}">${list.length}</span></li>`).join("");
+}
+
+function jumpTo(i){
+  const tr=document.getElementById("row"+i); if(!tr) return;
+  document.querySelectorAll("#tbl tr.sel").forEach(t=>t.classList.remove("sel","flash"));
+  const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  tr.scrollIntoView({behavior:reduce?"auto":"smooth",block:"center"});
+  void tr.offsetWidth; tr.classList.add("sel","flash");
+}
+const STAGE_ALIASES = {script:0, recce:1, talent:2, influencer:2, actor:2, shoot:3, "first cut":4, firstcut:4, edit:4, "client ok":5, approval:5, "client approval":5, "live link":6, live:6};
+function stageIndex(name){
+  const n=String(name||"").trim().toLowerCase();
+  if(!n || n==="manual") return -1;
+  if(n in STAGE_ALIASES) return STAGE_ALIASES[n];
+  const i=STAGES.findIndex(s=>s.toLowerCase()===n); return i;
+}
+// Milestone is earned when every applicable deliverable of the project has finished its linked stage.
+// Manual milestones (no linked stage) count as earned once they are marked received.
+function computePayments(all){
+  const list = (PAY||[]).filter(p=>all || p.project===FILTER);
+  const ms=[]; const per=[];
+  list.forEach(p=>{
+    const proj = PROJECTS.find(x=>x.name===p.project); const rows = proj? proj.rows : [];
+    let e=0, r=0, t=0;
+    p.milestones.forEach(m=>{
+      let pct = Number(m.percent)||0; if(pct>1) pct=pct/100;
+      const si = stageIndex(m.stage);
+      const app = si<0? 0 : rows.filter(x=>x.st[si]!=="n").length;
+      const done = si<0? 0 : rows.filter(x=>x.st[si]==="d").length;
+      const earned = si<0 ? !!m.received : (app>0 && done===app);
+      const state = m.received ? "rec" : earned ? "due" : "prog";
+      t+=pct; if(earned||m.received) e+=pct; if(m.received) r+=pct;
+      ms.push({project:p.project, milestone:m.milestone, stage: si<0? "Manual" : STAGES[si], pct, app, done, earned, received:!!m.received, recDate:parseDate(m.receivedDate).d, state});
+    });
+    if(t>0) per.push({e:e/t, r:r/t});   // normalise in case a project's % do not add up to 100
+  });
+  const avg = k => per.length ? per.reduce((a,x)=>a+x[k],0)/per.length : 0;
+  const earnedPct = avg("e"), recPct = avg("r");
+  return {ms, earnedPct, recPct, duePct: Math.max(earnedPct-recPct,0), notYetPct: Math.max(1-earnedPct,0), projects: per.length};
+}
+function renderPayments(pay, all){
+  const panel=$("paypanel");
+  if(!pay){ panel.hidden=true; return; }
+  panel.hidden=false;
+  const P = x => Math.round(x*100)+"%";
+  if(!pay.ms.length){
+    $("paybody").innerHTML = `<p class="note" style="margin-top:0">No payment milestones for ${all?"any project":esc(FILTER)} yet. In the project tab of the Google Sheet, fill the columns Payment Milestone, Linked Stage, Payment %, Payment Received and Received Date.</p>`;
+    return;
+  }
+  const lab={rec:"Received",due:"Due · bill client",prog:"In progress"};
+  $("paybody").innerHTML = `
+    <div class="paysum">
+      <div><b class="g">${P(pay.earnedPct)}</b>Earned (milestones done)</div>
+      <div><b class="g">${P(pay.recPct)}</b>Received</div>
+      <div><b class="a">${P(pay.duePct)}</b>Due now (earned, not received)</div>
+      <div><b>${P(pay.notYetPct)}</b>Not yet earned</div>
+    </div>
+    ${all && pay.projects>1 ? `<p class="note" style="margin:0 0 8px">Average across ${pay.projects} projects.</p>` : `<div class="paybar" role="img" aria-label="${P(pay.recPct)} received, ${P(pay.earnedPct)} earned">${pay.ms.map(m=>`<i class="${m.state==="rec"?"rec":m.state==="due"?"pend":"prog"}" style="width:${m.pct*100}%" title="${esc(m.milestone)} · ${P(m.pct)} · ${lab[m.state]}"></i>`).join("")}</div>
+    <div class="legend" style="margin-bottom:10px"><span><i class="chip d"></i>Received</span><span><i class="chip" style="background:rgba(255,191,71,.55)"></i>Earned, not received</span><span><i class="chip n" style="opacity:1"></i>Not yet earned</span></div>`}
+    <div class="scroll"><table style="min-width:640px"><thead><tr>${all?"<th>Project</th>":""}<th>#</th><th>Milestone</th><th>Linked stage</th><th>Payment %</th><th>Stage progress</th><th>Status</th><th>Received on</th></tr></thead><tbody>
+    ${pay.ms.map((m,i)=>`<tr>${all?`<td class="proj-c">${esc(m.project)}</td>`:""}<td class="num">${i+1}</td><td>${esc(m.milestone)}</td><td class="stage">${esc(m.stage)}</td>
+      <td class="num">${P(m.pct)}</td>
+      <td>${m.stage==="Manual"?'<span class="stage">marked manually</span>':`<div class="pbar"><div class="track"><i style="width:${m.app?Math.round(m.done/m.app*100):0}%;${m.done<m.app?"background:var(--amber)":""}"></i></div><span class="num">${m.done}/${m.app}</span></div>`}</td>
+      <td><span class="pchip ${m.state==="rec"?"rec":m.state==="due"?"pend":"prog"}">${lab[m.state]}</span></td>
+      <td class="num">${m.recDate?fmtDate(m.recDate):"—"}</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+// ---------- project timeline (planned deadlines per stage)
+const DAY=86400000;
+function projectTimeline(p){
+  const items=[];
+  (p.timeline||[]).forEach(t=>{
+    const d=parseDate(t.date).d; if(!d) return;
+    const n=String(t.stage||"").trim(); const nl=n.toLowerCase();
+    if(/start|kick ?off|brief/.test(nl)){ items.push({name:n, date:d, kind:"start"}); return; }
+    const si=stageIndex(n);
+    if(si<0){ items.push({name:n, date:d, kind:"marker"}); return; }
+    const app=p.rows.filter(r=>r.st[si]!=="n").length, done=p.rows.filter(r=>r.st[si]==="d").length;
+    const cdate=parseDate(t.completed).d;              // Completed Date in the sheet always wins
+    const complete = !!cdate || app===0 || done===app;
+    const days=Math.round((d-TODAY)/DAY);
+    const lateBy = cdate ? Math.round((cdate-d)/DAY) : 0;   // >0 = finished after the planned date
+    const state = complete? "done" : d<TODAY ? "late" : days<=3 ? "soon" : "next";
+    items.push({name:STAGES[si], date:d, kind:"stage", si, app, done, complete, state, days, cdate, lateBy});
+  });
+  items.sort((a,b)=>a.date-b.date);
+  const stages=items.filter(i=>i.kind==="stage");
+  const start=(items.find(i=>i.kind==="start")||items[0]||{}).date||null;
+  const liveItem=stages.find(i=>i.si===6) || stages[stages.length-1] || null;
+  const late=stages.filter(i=>i.state==="late");
+  const status = !stages.length? "none" : stages.every(i=>i.complete)? "done" : late.length? "late" : "ok";
+  return {items, stages, start, live: liveItem? liveItem.date : null, late, status};
+}
+function tlPill(t){
+  return t.status==="late"? `<span class="tpill late">OVERDUE · ${t.late.length} stage${t.late.length>1?"s":""} late</span>`
+       : t.status==="done"? `<span class="tpill done">COMPLETED</span>`
+       : t.status==="ok"? `<span class="tpill ok">ON TRACK</span>` : `<span class="tpill none">NO TIMELINE</span>`;
+}
+function renderTimeline(all){
+  const svg=$("tlsvg"), head=$("tlhead");
+  const projs = all? PROJECTS : PROJECTS.filter(p=>p.name===FILTER);
+  const tls = projs.map(p=>({p, t:projectTimeline(p)})).filter(x=>x.t.stages.length);
+  const fmtS=d=>d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"});
+  if(!tls.length){
+    head.innerHTML = `<span class="tpill none">NO TIMELINE</span><span>Add dates in the project tab: columns <b>Timeline Stage</b>, <b>Planned Date</b> and <b>Completed Date</b>.</span>`;
+    svg.setAttribute("viewBox","0 0 860 10"); svg.innerHTML=""; return;
+  }
+  const C={done:"#3dff8f",late:"#ff6161",soon:"#ffbf47",next:"#6f9483"};
+  const icon=(st,cx,cy)=> st==="done" ? `<path d="M${cx-7} ${cy} l5 5 l9 -10" fill="none" stroke="#04110a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`
+    : st==="late" ? `<text x="${cx}" y="${cy+6}" text-anchor="middle" fill="#1a0505" font-size="18" font-weight="700">!</text>`
+    : st==="soon" ? `<circle cx="${cx}" cy="${cy}" r="7" fill="none" stroke="#1a1200" stroke-width="2.2"/><path d="M${cx} ${cy-4} v4 l3 2" stroke="#1a1200" stroke-width="2" fill="none" stroke-linecap="round"/>`
+    : `<circle cx="${cx}" cy="${cy}" r="4" fill="#6f9483"/>`;
+  const statusText=st=> st.state==="done" ? (st.cdate ? `Done ${fmtS(st.cdate)}` : "Done") : st.state==="late" ? `${Math.abs(st.days)} days late` : st.days===0 ? "Due today" : `in ${st.days} days`;
+  // position of TODAY between equally spaced stations
+  const todayX=(stations,xs)=>{
+    if(TODAY<=stations[0].date) return xs[0]-40;
+    for(let i=0;i<stations.length-1;i++){ const a=stations[i].date,b=stations[i+1].date;
+      if(TODAY>=a && TODAY<=b) return xs[i]+(xs[i+1]-xs[i])*((TODAY-a)/((b-a)||1)); }
+    return xs[xs.length-1]+40;
+  };
+  if(!all){
+    const t=tls[0].t, st=t.stages, n=st.length, W=860, L=75, R=75, cy=92;
+    const xs=st.map((_,i)=> n===1? W/2 : L+i*(W-L-R)/(n-1));
+    const tx=Math.max(20,Math.min(W-20,todayX(st,xs)));
+    // progress = up to last station whose deadline has passed (or today)
+    let g=`<line x1="${xs[0]}" x2="${xs[n-1]}" y1="${cy}" y2="${cy}" stroke="#1d4a39" stroke-width="6" stroke-linecap="round"/>`;
+    for(let i=0;i<n-1;i++){ const c = st[i].state==="done" ? C.done : st[i].state==="late" ? C.late : null;
+      if(c) g+=`<line x1="${xs[i]}" x2="${xs[i+1]}" y1="${cy}" y2="${cy}" stroke="${c}" stroke-width="6" opacity="${st[i].state==="done"?1:.55}"/>`; }
+    // today flag
+    g+=`<line x1="${tx}" x2="${tx}" y1="${cy-52}" y2="${cy+20}" stroke="#d7f7e5" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <rect x="${tx-34}" y="${cy-70}" width="68" height="20" rx="4" fill="#d7f7e5"/><text x="${tx}" y="${cy-56}" text-anchor="middle" fill="#04110a" font-size="11" font-weight="600">TODAY</text>`;
+    st.forEach((s,i)=>{ const x=xs[i], c=C[s.state];
+      g+=`<g><title>${esc(s.name)} · planned ${fmtDate(s.date)}${s.cdate?" · completed "+fmtDate(s.cdate):""} · ${s.done}/${s.app} deliverables done</title>
+        <circle cx="${x}" cy="${cy}" r="22" fill="${s.state==="next"?"#08110d":c}" stroke="${c}" stroke-width="3" style="filter:drop-shadow(0 0 6px ${c}88)"/>${icon(s.state,x,cy)}
+        <text x="${x}" y="${cy+46}" text-anchor="middle" fill="#d7f7e5" font-size="13" font-weight="600" style="font-family:'Chakra Petch',sans-serif;letter-spacing:.05em">${s.name.toUpperCase()}</text>
+        <text x="${x}" y="${cy+64}" text-anchor="middle" fill="#6f9483" font-size="11">Plan ${fmtS(s.date)}</text>
+        <text x="${x}" y="${cy+82}" text-anchor="middle" fill="${c}" font-size="11.5" font-weight="600">${statusText(s)}</text>
+        ${s.state!=="done"&&s.app?`<text x="${x}" y="${cy+98}" text-anchor="middle" fill="#6f9483" font-size="10.5">${s.done}/${s.app} done</text>`:""}${s.state==="done"&&s.lateBy>0?`<text x="${x}" y="${cy+98}" text-anchor="middle" fill="${C.soon}" font-size="10.5">${s.lateBy} days after plan</text>`:""}${s.state==="done"&&s.cdate&&s.lateBy<=0?`<text x="${x}" y="${cy+98}" text-anchor="middle" fill="#6f9483" font-size="10.5">on time</text>`:""}</g>`; });
+    svg.setAttribute("viewBox",`0 0 ${W} 200`); svg.innerHTML=g;
+    const days=t.live? Math.round((t.live-TODAY)/DAY) : null;
+    head.innerHTML = `${tlPill(t)}${t.live?`<span>Live date <b>${fmtDate(t.live)}</b> · ${t.status==="done"?"delivered":days<0?`<b style="color:var(--red)">${-days} days past</b>`:days===0?"<b>today</b>":`<b>${days} days left</b>`}</span>`:""}${t.start?`<span>Started ${fmtDate(t.start)}</span>`:""}`;
+    $("tlhint").innerHTML=`<span style="color:${C.done}">●</span> done &nbsp;<span style="color:${C.late}">●</span> late &nbsp;<span style="color:${C.soon}">●</span> due in 3 days &nbsp;<span style="color:${C.next}">●</span> upcoming`;
+  } else {
+    const W=860, L=150, R=190, rowH=64; let g="";
+    tls.forEach(({p,t},r)=>{ const st=t.stages, n=st.length, cy=r*rowH+30;
+      const xs=st.map((_,i)=> n===1? (L+W-R)/2 : L+i*(W-L-R)/(n-1));
+      const days=t.live? Math.round((t.live-TODAY)/DAY) : null;
+      g+=`<text x="12" y="${cy+5}" fill="#d7f7e5" font-size="13" font-weight="600">${esc(p.name)}</text>
+        <line x1="${xs[0]}" x2="${xs[n-1]}" y1="${cy}" y2="${cy}" stroke="#1d4a39" stroke-width="4" stroke-linecap="round"/>`;
+      for(let i=0;i<n-1;i++){ const c = st[i].state==="done" ? C.done : st[i].state==="late" ? C.late : null; if(c) g+=`<line x1="${xs[i]}" x2="${xs[i+1]}" y1="${cy}" y2="${cy}" stroke="${c}" stroke-width="4" opacity="${st[i].state==="done"?1:.55}"/>`; }
+      const tx=Math.max(L-20,Math.min(W-R+20,todayX(st,xs)));
+      g+=`<line x1="${tx}" x2="${tx}" y1="${cy-16}" y2="${cy+16}" stroke="#d7f7e5" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+      st.forEach((s,i)=>{ g+=`<g><title>${esc(s.name)} · ${fmtDate(s.date)} · ${statusText(s)}</title><circle cx="${xs[i]}" cy="${cy}" r="9" fill="${s.state==="next"?"#08110d":C[s.state]}" stroke="${C[s.state]}" stroke-width="2"/></g>
+        <text x="${xs[i]}" y="${cy+24}" text-anchor="middle" fill="#6f9483" font-size="9.5">${esc(s.name)}</text>`; });
+      const lab = t.status==="late" ? [`OVERDUE`,C.late] : t.status==="done" ? ["COMPLETED",C.done] : [`ON TRACK`,C.done];
+      g+=`<text x="${W-R+24}" y="${cy-2}" fill="${lab[1]}" font-size="11.5" font-weight="700">${lab[0]}</text>
+        <text x="${W-R+24}" y="${cy+14}" fill="#6f9483" font-size="10.5">${t.live? "live "+fmtS(t.live)+(t.status!=="done"&&days!=null?(days<0?` · ${-days}d past`:` · ${days}d left`):""):""}</text>`;
+    });
+    svg.setAttribute("viewBox",`0 0 ${W} ${tls.length*rowH+10}`); svg.innerHTML=g;
+    const late=tls.filter(x=>x.t.status==="late");
+    head.innerHTML = `${late.length? `<span class="tpill late">${late.length} PROJECT${late.length>1?"S":""} OVERDUE</span>` : `<span class="tpill ok">ALL ON TRACK</span>`}<span>dashed line = today</span>`;
+    $("tlhint").innerHTML=`<span style="color:${C.done}">●</span> done &nbsp;<span style="color:${C.late}">●</span> late &nbsp;<span style="color:${C.soon}">●</span> due in 3 days &nbsp;<span style="color:${C.next}">●</span> upcoming`;
+  }
+}
+function load(projects,pay,srcLabel){
+  PROJECTS = projects.map(p=>({name:p.name,hasFeedback:p.hasFeedback,rows:enrichProject(p),timeline:p.timeline||[]}));
+  PAY = Array.isArray(pay) ? pay : null;
+  if(FILTER!=="All" && !PROJECTS.some(p=>p.name===FILTER)) FILTER=PROJECTS[0]?.name;
+  if(srcLabel) $("src").innerHTML = "Showing: <b>"+esc(srcLabel)+"</b>";
+  render();
+}
+
+// ===== Paste your Apps Script Web App URL here (ends with /exec) =====
+const API_URL = "https://script.google.com/macros/s/AKfycbxSmQkGeCEvQ5bBrf51d0JdvYOvnMA-tt5pLgRHBjGHqRFyGYPFXoLaTRBoa1Dc4gjR-A/exec";
+// ======================================================================
+
+const TOKEN_KEY = "brikkin_console_token";
+const store = (()=>{ try{ return window.sessionStorage; }catch(e){ return null; } })();
+const getTok = () => { try{ return store && store.getItem(TOKEN_KEY); }catch(e){ return null; } };
+const setTok = v => { try{ if(!store) return; v ? store.setItem(TOKEN_KEY,v) : store.removeItem(TOKEN_KEY); }catch(e){} };
+let TOKEN = null, ME = null, USERS = [];
+
+async function api(action, payload){
+  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(API_URL)) throw new Error("The dashboard is not connected yet. Paste the Apps Script URL into API_URL in index.html.");
+  let res;
+  try{
+    res = await fetch(API_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(Object.assign({action, token: TOKEN}, payload||{}))});
+  }catch(e){ throw new Error("Could not reach the server. Check your internet connection and try again."); }
+  let j; try{ j = await res.json(); }catch(e){ throw new Error("The server returned an unexpected reply. Check the Apps Script deployment."); }
+  if(!j.ok && j.expired){ signOut(j.error); throw new Error(j.error); }
+  return j;
+}
+
+function gateShow(msg){ $("gate").hidden=false; $("app").hidden=true; const m=$("lmsg"); m.className="msg err"; m.textContent=msg||""; }
+function showData(j){
+  const when = j.updatedAt ? new Date(j.updatedAt).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
+  load(j.projects||[], j.payments||null, `Google Sheet${j.sheetName?" · "+j.sheetName:""} · loaded ${when}`);
+}
+function enterApp(j){
+  ME = j.user;
+  $("whonm").textContent = ME.name || ME.email;
+  const r=$("whorole"); r.textContent = ME.role==="admin"?"ADMIN":"USER"; r.className="role "+(ME.role==="admin"?"admin":"viewer");
+  $("userspanel").hidden = ME.role!=="admin";
+  $("openpanel").hidden = ME.role!=="admin"; $("checkspanel").hidden = ME.role!=="admin";
+  $("gate").hidden=true; $("app").hidden=false;
+  showData(j);
+  $("logpanel").hidden = ME.role!=="admin";
+  if(ME.role==="admin"){ loadUsers(); loadLog(); loadPrompts(); }
+  maybeStartTour();
+  startVira(j.prompts);
+}
+function signOut(msg){
+  endTour(true);
+  stopVira();
+  if(TOKEN) api("logout").catch(()=>{});
+  TOKEN=null; ME=null; setTok(null);
+  $("lpass").value=""; $("pwpanel").hidden=true; $("userspanel").hidden=true; $("openpanel").hidden=true; $("checkspanel").hidden=true; $("paypanel").hidden=true; $("logpanel").hidden=true; if($("vmpanel")) $("vmpanel").hidden=true; PAY=null; LOG=[];
+  gateShow(msg);
+}
+
+$("loginform").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const email=$("lemail").value.trim().toLowerCase(), password=$("lpass").value, m=$("lmsg"); m.className="msg err";
+  if(!email || !password){ m.textContent="Enter your email ID and password."; return; }
+  $("lbtn").disabled=true; $("lbtn").textContent="Signing in…"; m.textContent="";
+  try{
+    const j = await api("login", {email, password});
+    if(!j.ok){ m.textContent = j.error || "Sign in failed."; return; }
+    TOKEN = j.token; setTok(TOKEN); $("lpass").value="";
+    enterApp(j);
+  }catch(err){ m.textContent = err.message; }
+  finally{ $("lbtn").disabled=false; $("lbtn").textContent="Sign in"; }
+});
+$("logout").addEventListener("click", ()=>signOut());
+$("refresh").addEventListener("click", async ()=>{
+  const b=$("refresh"); b.disabled=true; b.textContent="Refreshing…";
+  try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); else $("src").innerHTML='<span class="err">'+esc(j.error)+'</span>'; }
+  catch(err){ $("src").innerHTML='<span class="err">'+esc(err.message)+'</span>'; }
+  finally{ b.disabled=false; b.textContent="Refresh data"; }
+});
+
+// ---- change own password
+$("pwbtn").addEventListener("click", ()=>{ const p=$("pwpanel"); p.hidden=!p.hidden; if(!p.hidden){ $("pwmsg").textContent=""; p.scrollIntoView({behavior:"smooth",block:"center"}); setTimeout(()=>$("pwold").focus(),300); } });
+$("pwform").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const m=$("pwmsg"), oldPassword=$("pwold").value, newPassword=$("pwnew").value;
+  if(newPassword.length<6){ m.className="msg err"; m.textContent="New password must be at least 6 characters."; return; }
+  try{
+    const j=await api("changeMyPassword",{oldPassword,newPassword});
+    m.className="msg "+(j.ok?"ok":"err"); m.textContent = j.ok? "Password updated." : j.error;
+    if(j.ok){ $("pwform").reset(); }
+  }catch(err){ m.className="msg err"; m.textContent=err.message; }
+});
+
+// ---- admin: users
+function note(t,ok){ const m=$("umsg"); m.textContent=t; m.className="msg "+(ok?"ok":"err"); }
+const fmtDateTime = d => d.toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:true});
+let LOG=[];
+async function loadLog(){
+  const m=$("logmsg"); m.className="msg"; m.textContent="Loading…";
+  try{ const j=await api("loginLog",{limit:300}); if(j.ok){ LOG=j.log||[]; m.textContent=""; renderLog(); } else { m.className="msg err"; m.textContent=j.error; } }
+  catch(err){ m.className="msg err"; m.textContent=err.message; }
+}
+function renderLog(){
+  const sel=$("logfilter"), cur=sel.value;
+  const emails=[...new Set(LOG.map(r=>r.email))].sort();
+  sel.innerHTML='<option value="">All users</option>'+emails.map(e=>{ const r=LOG.find(x=>x.email===e); return `<option value="${esc(e)}">${esc((r&&r.name)?r.name+" · "+e:e)}</option>`; }).join("");
+  if(emails.includes(cur)) sel.value=cur;
+  const rows=LOG.filter(r=>!sel.value || r.email===sel.value);
+  const t=$("logtable");
+  t.innerHTML=`<thead><tr><th>Date &amp; time</th><th>Name</th><th>Email ID</th><th>Result</th></tr></thead><tbody></tbody>`;
+  const tb=t.querySelector("tbody");
+  if(!rows.length){ tb.innerHTML=`<tr><td colspan="4" style="color:var(--muted)">No sign-ins recorded yet.</td></tr>`; return; }
+  rows.forEach(r=>{
+    const tr=document.createElement("tr"), d=new Date(r.time), ok=/^success/i.test(r.result);
+    tr.innerHTML=`<td class="num"></td><td></td><td class="num"></td><td><span class="pchip ${ok?"rec":"over"}"></span></td>`;
+    tr.children[0].textContent = isNaN(d)? r.time : fmtDateTime(d);
+    tr.children[1].textContent = r.name || "—";
+    tr.children[2].textContent = r.email;
+    tr.querySelector(".pchip").textContent = r.result;
+    tb.appendChild(tr);
+  });
+}
+$("logfilter").addEventListener("change", renderLog);
+$("logrefresh").addEventListener("click", ()=>{ loadLog(); loadUsers(); });
+async function loadUsers(){
+  try{ const j=await api("listUsers"); if(j.ok){ USERS=j.users; renderUsers(); if(typeof vmFillWho==="function") vmFillWho(); } else note(j.error,false); }
+  catch(err){ note(err.message,false); }
+}
+async function userAction(action, payload, okMsg, btn){
+  if(btn) btn.disabled=true;
+  try{
+    const j=await api(action,payload);
+    if(j.ok){ USERS=j.users; renderUsers(); note(okMsg,true); return true; }
+    note(j.error,false); renderUsers(); return false;
+  }catch(err){ note(err.message,false); return false; }
+  finally{ if(btn) btn.disabled=false; }
+}
+function renderUsers(){
+  const admins = USERS.filter(u=>u.role==="admin").length;
+  const t=$("utable");
+  t.innerHTML = `<thead><tr><th>Name</th><th>Email ID</th><th>Role</th><th>Added</th><th>Last login</th><th>Reset password</th><th></th></tr></thead><tbody></tbody>`;
+  const tb=t.querySelector("tbody");
+  USERS.forEach(u=>{
+    const self = ME && u.email===ME.email, lastAdmin = u.role==="admin" && admins<=1;
+    const tr=document.createElement("tr");
+    tr.innerHTML = `<td></td><td class="num"></td>
+      <td><select aria-label="Role" ${self||lastAdmin?"disabled":""}><option value="user">User</option><option value="admin">Admin</option></select></td>
+      <td class="num"></td>
+      <td class="num"></td>
+      <td><div class="inline"><input type="text" placeholder="New password" aria-label="New password"><button class="lnk" type="button">Reset</button></div></td>
+      <td><button class="lnk danger" type="button" ${self?"disabled":""}>Remove</button></td>`;
+    tr.children[0].textContent = (u.name||"") + (self?" (you)":"");
+    tr.children[1].textContent = u.email;
+    const d = u.created ? new Date(u.created) : null;
+    tr.children[3].textContent = d && !isNaN(d) ? fmtDate(d) : "—";
+    const ll = u.lastLogin ? new Date(u.lastLogin) : null;
+    tr.children[4].textContent = ll && !isNaN(ll) ? fmtDateTime(ll) : "Never";
+    const sel=tr.querySelector("select"); sel.value=u.role;
+    sel.addEventListener("change", ()=>userAction("setRole",{email:u.email,role:sel.value},`${u.name||u.email} is now ${sel.value==="admin"?"an admin":"a user"}.`,sel));
+    const pwIn=tr.querySelector(".inline input"), pwBtn=tr.querySelector(".inline button");
+    pwBtn.addEventListener("click", async()=>{
+      if(pwIn.value.length<6){ note("New password must be at least 6 characters.",false); return; }
+      const ok = await userAction("resetPassword",{email:u.email,password:pwIn.value},`Password reset for ${u.name||u.email}. Share the new password with them.`,pwBtn);
+      if(ok) pwIn.value="";
+    });
+    const rm=tr.querySelector(".danger");
+    rm.addEventListener("click", ()=>{
+      if(rm.dataset.armed!=="1"){ rm.dataset.armed="1"; rm.textContent="Confirm remove"; setTimeout(()=>{ rm.dataset.armed=""; rm.textContent="Remove"; },4000); return; }
+      userAction("removeUser",{email:u.email},`${u.name||u.email} removed.`,rm);
+    });
+    tb.appendChild(tr);
+  });
+}
+$("uform").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const name=$("uname").value.trim(), email=$("uemail").value.trim().toLowerCase(), password=$("upass").value, role=$("urole").value;
+  if(!name){ note("Enter the user's name.",false); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ note("Enter a valid email ID.",false); return; }
+  if(password.length<6){ note("Password must be at least 6 characters.",false); return; }
+  const ok = await userAction("addUser",{name,email,password,role},`${name} added. Share the email ID and password with them.`,$("ubtn"));
+  if(ok) $("uform").reset();
+});
+
+
+// ================= VIRA (Visual Insights & Reporting Assistant) — the Command Deck guide (first-visit tour) =================
+const DEX_SVG = (size=96, mood="happy") => `
+<svg viewBox="0 0 120 130" width="${size}" height="${size*130/120}" aria-hidden="true">
+  <defs>
+    <linearGradient id="viraBody" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b3a2d"/><stop offset="1" stop-color="#0b1712"/></linearGradient>
+    <radialGradient id="viraGlow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#3dff8f" stop-opacity=".45"/><stop offset="1" stop-color="#3dff8f" stop-opacity="0"/></radialGradient>
+  </defs>
+  <ellipse cx="60" cy="122" rx="28" ry="5" fill="#000" opacity=".45"/>
+  <circle cx="60" cy="62" r="56" fill="url(#viraGlow)"/>
+  <!-- ponytail -->
+  <path d="M90 40 q20 6 16 30 q-3 12 -12 14 q8 -14 0 -30 z" fill="#3dff8f" opacity=".9"/>
+  <!-- head with rounded top -->
+  <path d="M26 56 q0 -32 34 -32 q34 0 34 32 v12 q0 12 -14 12 h-40 q-14 0 -14 -12 z" fill="url(#viraBody)" stroke="#3dff8f" stroke-width="2.5"/>
+  <!-- fringe -->
+  <path d="M30 46 q8 -18 30 -18 q24 0 30 18 q-14 -8 -28 -4 q-18 -6 -32 4 z" fill="#3dff8f" opacity=".9"/>
+  <!-- headset -->
+  <path d="M27 58 q-6 0 -6 8 q0 8 6 8" fill="none" stroke="#d7f7e5" stroke-width="3"/>
+  <path d="M24 72 q4 10 16 10" fill="none" stroke="#d7f7e5" stroke-width="2"/><circle cx="41" cy="82" r="2.5" fill="#ff8fc8"/>
+  <!-- visor -->
+  <rect x="34" y="46" width="52" height="26" rx="11" fill="#04110a" stroke="#1d4a39"/>
+  <g class="dex-eyes">
+    ${mood==="wink"
+      ? `<rect x="44" y="53" width="9" height="10" rx="4.5" fill="#3dff8f"/><path d="M42 52 l-3 -3 M46 51 l-1 -4 M50 51 l1 -4" stroke="#3dff8f" stroke-width="1.8" stroke-linecap="round"/><path d="M67 59 q5 -4 10 0" stroke="#3dff8f" stroke-width="3" fill="none" stroke-linecap="round"/>`
+      : `<rect x="44" y="53" width="9" height="11" rx="4.5" fill="#3dff8f"/><rect x="67" y="53" width="9" height="11" rx="4.5" fill="#3dff8f"/>
+         <path d="M42 52 l-3 -3 M46 51 l-1 -4 M50 51 l1 -4 M70 51 l-1 -4 M74 51 l1 -4 M78 52 l3 -3" stroke="#3dff8f" stroke-width="1.8" stroke-linecap="round"/>`}
+  </g>
+  <circle cx="40" cy="67" r="3.5" fill="#ff8fc8" opacity=".7"/><circle cx="80" cy="67" r="3.5" fill="#ff8fc8" opacity=".7"/>
+  <path d="M54 67 q6 4 12 0" stroke="#ff8fc8" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <!-- bow -->
+  <g class="dex-clap">
+    <path d="M60 26 l-12 -8 q-4 6 0 14 z M60 26 l12 -8 q4 6 0 14 z" fill="#ff8fc8" stroke="#04110a" stroke-width="1.2"/>
+    <circle cx="60" cy="26" r="3.5" fill="#ffbf47" stroke="#04110a" stroke-width="1"/>
+  </g>
+  <!-- body / dress -->
+  <path d="M44 84 h32 l8 28 q0 4 -4 4 h-40 q-4 0 -4 -4 z" fill="url(#viraBody)" stroke="#3dff8f" stroke-width="2"/>
+  <circle cx="60" cy="96" r="5" fill="#04110a" stroke="#3dff8f" stroke-width="2"/><circle cx="60" cy="96" r="2" fill="#ffbf47"/>
+  <g class="dex-arm"><path d="M78 90 q14 -4 18 -16" stroke="#3dff8f" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="96" cy="72" r="5" fill="#d7f7e5"/></g>
+  <path d="M42 90 q-12 6 -14 16" stroke="#3dff8f" stroke-width="5" fill="none" stroke-linecap="round"/>
+</svg>`;
+
+const TOUR_KEY = e => "cd_tour_seen_" + String(e||"").toLowerCase();
+const tourSeen = e => { try{ return localStorage.getItem(TOUR_KEY(e))==="1"; }catch(err){ return false; } };
+const markTour = e => { try{ localStorage.setItem(TOUR_KEY(e),"1"); }catch(err){} };
+const panelOf = id => { const el=document.getElementById(id); return el ? (el.closest(".panel")||el) : null; };
+const visible = el => el && !el.hidden && el.offsetParent !== null;
+
+function tourSteps(){
+  const admin = ME && ME.role==="admin";
+  const first = (ME && (ME.name||"").split(" ")[0]) || "there";
+  const s = [
+    {el:null, mood:"wink", title:`Hi ${first}! I'm VIRA.`, text:"Your <b>Visual Insights &amp; Reporting Assistant</b>. I keep watch over every Brikkin project. Give me one minute and I'll show you how to read this Command Deck."},
+    {el:()=>$("search"), title:"Pick a project", text:"Search any project here, or choose <b>All Projects</b> to see the whole vertical at once. Everything below changes to match."},
+    {el:()=>$("kpis"), title:"The headline numbers", text:"Deliverables, approvals, work in progress, shoots done, videos live and upcoming shoots. The thin bar under each number shows progress."},
+    {el:()=>panelOf("gauge"), title:"How far along are we?", text:"The gauge is overall completion. The three rings show client approvals, shoots done and links posted."},
+    {el:()=>panelOf("pipe"), title:"Production pipeline", text:"Every deliverable moves Script → Recce → Talent → Shoot → First Cut → Client OK → Live Link. The stage marked <b style='color:var(--amber)'>BOTTLENECK</b> is where work is stuck."},
+    {el:()=>$("tlpanel"), title:"Are we on time?", text:"Each circle is a stage deadline. <b style='color:var(--neon)'>Green ✓</b> done, <b style='color:var(--red)'>red !</b> late, <b style='color:var(--amber)'>amber</b> due within 3 days. The TODAY flag shows where we are right now."},
+    {el:()=>panelOf("bars"), title:"Every video at a glance", text:"One bar per deliverable. Green is complete, amber still has work left. <b>Click any bar</b> to jump to that video in the tracker below."},
+    {el:()=>panelOf("tbl"), title:"The detailed tracker", text:"Each row is one video. Filled green chips are done, amber outlines are pending, faint ones don't apply. The last column says what is pending next."}
+  ];
+  if(admin){
+    s.push({el:()=>visible($("paypanel"))?$("paypanel"):null, title:"Payments (admins only)", text:"Payment milestones are linked to production stages. When a stage is done the milestone is <b>earned</b>; mark it received in the sheet once the client pays."});
+    s.push({el:()=>$("openpanel"), title:"What needs attention", text:"Open Items lists every unfinished video, and Data Checks flags mistakes in the sheet. Both should shrink to zero."});
+    s.push({el:()=>$("userspanel"), title:"Manage the team", text:"Add people, set them as User or Admin, reset passwords or remove access here."});
+    s.push({el:()=>$("logpanel"), title:"Who signed in", text:"Every sign-in attempt with date and time, including failed ones."});
+  }
+  s.push({el:()=>$("refresh").closest(".actions"), title:"Stay up to date", text:"The data comes live from the Google Sheet. Press <b>Refresh data</b> after the team updates it. You can also change your password or sign out here."});
+  s.push({el:()=>$("tourbtn"), mood:"wink", title:"That's it!", text:"Tap me here any time to replay this tour. Happy tracking!"});
+  return s.filter(x=>!x.el || x.el());
+}
+
+let TOUR=null;
+function startTour(){
+  endTour(true);
+  const steps=tourSteps(); if(!steps.length) return;
+  const root=document.createElement("div"); root.id="tour"; root.setAttribute("role","dialog"); root.setAttribute("aria-modal","true"); root.setAttribute("aria-labelledby","tourtitle");
+  root.innerHTML=`<div class="tour-shade"></div><div class="tour-hole"></div>
+    <div class="tour-card"><div class="tour-dex"></div><div class="tour-body">
+      <div class="tour-step"></div><h3 id="tourtitle"></h3><p class="tour-text"></p>
+      <div class="tour-nav"><button type="button" class="lnk" data-a="skip">Skip tour</button><span class="sp"></span>
+        <button type="button" class="btn ghost" data-a="back">Back</button><button type="button" class="btn" data-a="next">Next</button></div>
+    </div></div>`;
+  document.body.appendChild(root);
+  TOUR={root, steps, i:0};
+  root.addEventListener("click", e=>{ const a=e.target.closest("[data-a]"); if(!a) return;
+    if(a.dataset.a==="next") tourGo(TOUR.i+1); else if(a.dataset.a==="back") tourGo(TOUR.i-1); else endTour(); });
+  root.querySelector(".tour-shade").addEventListener("click", ()=>{});
+  document.addEventListener("keydown", tourKeys);
+  window.addEventListener("resize", tourPlace);
+  window.addEventListener("scroll", tourPlace, {passive:true});
+  tourGo(0);
+}
+function tourKeys(e){ if(!TOUR) return; if(e.key==="Escape") endTour(); else if(e.key==="ArrowRight") tourGo(TOUR.i+1); else if(e.key==="ArrowLeft") tourGo(TOUR.i-1); }
+function endTour(silent){
+  if(!TOUR) return;
+  TOUR.root.remove(); document.removeEventListener("keydown", tourKeys);
+  window.removeEventListener("resize", tourPlace); window.removeEventListener("scroll", tourPlace);
+  TOUR=null; if(!silent && ME) markTour(ME.email);
+}
+function tourGo(i){
+  if(!TOUR) return;
+  if(i>=TOUR.steps.length){ endTour(); return; }
+  TOUR.i=Math.max(0,i);
+  const st=TOUR.steps[TOUR.i], r=TOUR.root, n=TOUR.steps.length;
+  r.querySelector(".tour-dex").innerHTML=DEX_SVG(84, st.mood||"happy");
+  r.querySelector(".tour-step").textContent=`Step ${TOUR.i+1} of ${n}`;
+  r.querySelector("#tourtitle").textContent=st.title;
+  r.querySelector(".tour-text").innerHTML=st.text;
+  r.querySelector('[data-a="back"]').hidden = TOUR.i===0;
+  r.querySelector('[data-a="next"]').textContent = TOUR.i===0 ? "Show me around" : TOUR.i===n-1 ? "Finish" : "Next";
+  r.querySelector('[data-a="skip"]').hidden = TOUR.i===n-1;
+  const card=r.querySelector(".tour-card"); card.classList.remove("pop"); void card.offsetWidth; card.classList.add("pop");
+  const el = st.el ? st.el() : null; TOUR.target=el;
+  if(el){
+    const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({behavior:reduce?"auto":"smooth", block: el.offsetHeight > window.innerHeight*0.6 ? "start" : "center"});
+    setTimeout(tourPlace, reduce?20:420);
+  }
+  tourPlace();
+  setTimeout(()=>r.querySelector('[data-a="next"]').focus(), 50);
+}
+function tourPlace(){
+  if(!TOUR) return;
+  const r=TOUR.root, hole=r.querySelector(".tour-hole"), card=r.querySelector(".tour-card"), el=TOUR.target;
+  const vw=window.innerWidth, vh=window.innerHeight, cw=Math.min(380, vw-32);
+  card.style.width=cw+"px";
+  if(!el){
+    hole.style.cssText="left:50%;top:50%;width:0;height:0;";
+    card.style.left=(vw-cw)/2+"px"; card.style.top=Math.max(16,(vh-card.offsetHeight)/2)+"px"; return;
+  }
+  const b=el.getBoundingClientRect(), pad=8;
+  const top=Math.max(4,b.top-pad), left=Math.max(4,b.left-pad), h=Math.min(b.height+pad*2, vh-top-4), w=Math.min(b.width+pad*2, vw-left-4);
+  hole.style.cssText=`left:${left}px;top:${top}px;width:${w}px;height:${h}px;`;
+  const ch=card.offsetHeight;
+  let y = top+h+14 + ch <= vh ? top+h+14 : (top-14-ch >= 0 ? top-14-ch : vh-ch-16);
+  let x = Math.min(Math.max(16, left + w/2 - cw/2), vw-cw-16);
+  card.style.left=x+"px"; card.style.top=Math.max(16,y)+"px";
+}
+function maybeStartTour(){ if(ME) setTimeout(startTour, 700); }   // VIRA greets on every open; "Skip tour" closes her
+
+$("tourbtnicon").innerHTML=DEX_SVG(26);
+$("tourbtn").addEventListener("click", startTour);
+
+// ================= VIRA prompts (questions / reminders from the _VIRA tab) =================
+const VIRA_EVERY_MIN = 1;          // VIRA kiti minitani yeil
+const VIRA_SHOW_SEC  = 20;         // bubble kiti second disel
+let VIRA_MSGS = [], VIRA_I = 0, VIRA_TIMER = null, VIRA_HIDE = null;
+function startVira(list){
+  stopVira();
+  const first = (ME && (ME.name||"").split(" ")[0]) || "";
+  VIRA_MSGS = (list||[]).map(m => String(m).replace(/\{name\}/gi, first));
+  if(!VIRA_MSGS.length) return;
+  VIRA_I = 0;
+  VIRA_TIMER = setInterval(showViraNudge, VIRA_EVERY_MIN*60000);
+  setTimeout(showViraNudge, 4000);
+}
+function showViraNudge(){
+  if(!VIRA_MSGS.length || TOUR) return;            // tour chalu asel tar thamba
+  hideViraNudge();
+  const msg = VIRA_MSGS[VIRA_I % VIRA_MSGS.length]; VIRA_I++;
+  const box = document.createElement("div");
+  box.className = "vira-nudge"; box.id = "viranudge"; box.setAttribute("role","status");
+  box.innerHTML = `<div class="bubble"><div class="vlabel">VIRA</div><div class="txt"></div><button class="x" type="button" aria-label="Close">×</button></div><div class="vbot">${DEX_SVG(78,"happy")}</div>`;
+  box.querySelector(".txt").textContent = msg;
+  box.querySelector(".x").addEventListener("click", hideViraNudge);
+  document.body.appendChild(box);
+  VIRA_HIDE = setTimeout(hideViraNudge, VIRA_SHOW_SEC*1000);
+}
+function hideViraNudge(){ clearTimeout(VIRA_HIDE); const b=document.getElementById("viranudge"); if(b) b.remove(); }
+function stopVira(){ clearInterval(VIRA_TIMER); VIRA_TIMER=null; hideViraNudge(); VIRA_MSGS=[]; }
+
+// ================= Admin: manage VIRA messages =================
+const DAY_LIST = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+function buildPromptPanel(){
+  if(document.getElementById("vmpanel")) return;
+  const host = document.getElementById("logpanel") || document.getElementById("userspanel");
+  if(!host) return;
+  const p = document.createElement("div");
+  p.className = "panel s12"; p.id = "vmpanel"; p.hidden = true;
+  p.innerHTML = `
+    <div class="ph"><h2>VIRA Messages</h2><span class="role admin">ADMIN ONLY</span></div>
+    <form class="uform" id="vmform" novalidate style="grid-template-columns:1fr 2fr auto;align-items:end">
+      <div class="fld"><label for="vmwho">Show to</label><select id="vmwho"></select></div>
+      <div class="fld"><label for="vmmsg">Message (use {name} for their first name)</label><input id="vmmsg" type="text" maxlength="300" placeholder="Hi {name}! Hya week chya vlog cha ideation kay aahe?"></div>
+      <button class="btn" type="submit" id="vmbtn">Add message</button>
+    </form>
+    <div class="fld" style="margin:-4px 0 14px"><label>Days</label>
+      <div id="vmdays" style="display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px">
+        <label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:13px;color:var(--ink)"><input type="checkbox" value="Daily" id="vmdaily" checked style="width:auto;accent-color:var(--neon)"> Every day</label>
+        ${DAY_LIST.map(d=>`<label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;font-family:var(--body);font-size:13px;color:var(--ink)"><input type="checkbox" value="${d}" class="vmday" style="width:auto;accent-color:var(--neon)"> ${d}</label>`).join("")}
+      </div></div>
+    <div class="msg" id="vmmsgbox" role="status"></div>
+    <div class="scroll"><table class="utable" id="vmtable"></table></div>
+    <p class="note">Messages are saved in the _VIRA tab of the Google Sheet. Each person sees their own messages (and ALL messages) on the days chosen, when they open the dashboard.</p>`;
+  host.parentNode.insertBefore(p, host.nextSibling);
+  $("vmdaily").addEventListener("change", e=>{ if(e.target.checked) document.querySelectorAll(".vmday").forEach(c=>c.checked=false); });
+  document.querySelectorAll(".vmday").forEach(c=>c.addEventListener("change", ()=>{ if(c.checked) $("vmdaily").checked=false; }));
+  $("vmform").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const message=$("vmmsg").value.trim(), email=$("vmwho").value;
+    const days = $("vmdaily").checked ? "Daily" : [...document.querySelectorAll(".vmday:checked")].map(c=>c.value).join(",");
+    if(!message){ vmNote("Write the message VIRA should show.",false); return; }
+    if(!days){ vmNote("Choose at least one day.",false); return; }
+    $("vmbtn").disabled=true;
+    try{ const j=await api("addPrompt",{email,message,days}); if(j.ok){ $("vmmsg").value=""; vmRender(j.prompts); vmNote("Message added.",true); } else vmNote(j.error,false); }
+    catch(err){ vmNote(err.message,false); } finally{ $("vmbtn").disabled=false; }
+  });
+}
+function vmNote(t,ok){ const m=$("vmmsgbox"); m.textContent=t; m.className="msg "+(ok?"ok":"err"); }
+function vmFillWho(){
+  const sel=$("vmwho"); if(!sel) return; const cur=sel.value;
+  sel.innerHTML = `<option value="ALL">Everyone (ALL)</option>` + (USERS||[]).map(u=>`<option value="${esc(u.email)}">${esc((u.name||u.email)+" · "+u.email)}</option>`).join("");
+  if(cur) sel.value=cur;
+}
+function vmRender(list){
+  const t=$("vmtable"); if(!t) return;
+  const nameOf = e => { if(String(e).toUpperCase()==="ALL") return "Everyone"; const u=(USERS||[]).find(x=>x.email===String(e).toLowerCase()); return u? (u.name||u.email) : e; };
+  t.innerHTML = `<thead><tr><th>Show to</th><th>Message</th><th>Days</th><th></th></tr></thead><tbody></tbody>`;
+  const tb=t.querySelector("tbody");
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="4" style="color:var(--muted)">No messages yet. Add the first one above.</td></tr>`; return; }
+  list.forEach(p=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td></td><td></td><td class="num"></td><td><button class="lnk danger" type="button">Delete</button></td>`;
+    tr.children[0].textContent=nameOf(p.email); tr.children[1].textContent=p.message; tr.children[2].textContent=p.days||"Daily";
+    const b=tr.querySelector("button");
+    b.addEventListener("click", async ()=>{
+      if(b.dataset.armed!=="1"){ b.dataset.armed="1"; b.textContent="Confirm delete"; setTimeout(()=>{ b.dataset.armed=""; b.textContent="Delete"; },4000); return; }
+      b.disabled=true;
+      try{ const j=await api("removePrompt",{row:p.row,message:p.message}); if(j.ok){ vmRender(j.prompts); vmNote("Message deleted.",true); } else vmNote(j.error,false); }
+      catch(err){ vmNote(err.message,false); } finally{ b.disabled=false; }
+    });
+    tb.appendChild(tr);
+  });
+}
+async function loadPrompts(){
+  buildPromptPanel(); const p=$("vmpanel"); if(!p) return;
+  p.hidden=false; setTimeout(vmFillWho, 1500);
+  try{ const j=await api("listPrompts"); if(j.ok){ vmFillWho(); vmRender(j.prompts); } else vmNote(j.error,false); }
+  catch(err){ vmNote(err.message,false); }
+}
+
+// ---- start
+(async()=>{
+  const t = getTok();
+  if(!t){ gateShow(); return; }
+  TOKEN = t;
+  $("gate").hidden=false; $("lmsg").className="msg"; $("lmsg").textContent="Restoring your session…";
+  try{ const j=await api("data"); if(j.ok) enterApp(j); else gateShow(); }
+  catch(err){ if(TOKEN) gateShow(err.message); }
+})();
+</script>
+
+</body>
+</html>
