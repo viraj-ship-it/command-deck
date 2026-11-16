@@ -14,6 +14,7 @@ $CFG = require __DIR__ . '/config.php';
 date_default_timezone_set($CFG['timezone'] ?? 'Asia/Kolkata');
 
 const SESSION_HOURS = 12;
+const SUPER_EMAIL = 'admin@insomniacs.in';   // becomes Super Admin automatically if there is none yet
 const LOG_KEEP = 2000;
 // column header in a project → field name the dashboard uses
 const COLUMNS = [
@@ -66,25 +67,25 @@ function route(array $b): array {
     case 'data': { $u = auth($b); return $u['ok'] ? with_data(['ok' => true, 'user' => pub($u['user'])], $u['user']) : $u; }
     case 'logout': if (!empty($b['token'])) q('DELETE FROM cd_sessions WHERE token_hash = ?', [hash('sha256', (string)$b['token'])]); return ['ok' => true];
     case 'changeMyPassword': return change_my_password($b);
-    case 'listUsers': return admin($b, function () { return ['ok' => true, 'users' => users_list()]; });
-    case 'addUser': return admin($b, function () use ($b) { return add_user($b); });
-    case 'setRole': return admin($b, function ($me) use ($b) { return set_role($b, $me); });
-    case 'resetPassword': return admin($b, function () use ($b) { return reset_password($b); });
-    case 'removeUser': return admin($b, function ($me) use ($b) { return remove_user($b, $me); });
-    case 'loginLog': return admin($b, function () use ($b) { return ['ok' => true, 'log' => read_log((int)($b['limit'] ?? 300))]; });
-    case 'listPrompts': return admin($b, function () { return ['ok' => true, 'prompts' => list_prompts()]; });
-    case 'addPrompt': return admin($b, function () use ($b) { return add_prompt($b); });
-    case 'removePrompt': return admin($b, function () use ($b) { return remove_prompt($b); });
+    case 'listUsers': return superadmin($b, function () { return ['ok' => true, 'users' => users_list()]; });
+    case 'addUser': return superadmin($b, function () use ($b) { return add_user($b); });
+    case 'setRole': return superadmin($b, function ($me) use ($b) { return set_role($b, $me); });
+    case 'resetPassword': return superadmin($b, function () use ($b) { return reset_password($b); });
+    case 'removeUser': return superadmin($b, function ($me) use ($b) { return remove_user($b, $me); });
+    case 'loginLog': return superadmin($b, function () use ($b) { return ['ok' => true, 'log' => read_log((int)($b['limit'] ?? 300))]; });
+    case 'listPrompts': return superadmin($b, function () { return ['ok' => true, 'prompts' => list_prompts()]; });
+    case 'addPrompt': return superadmin($b, function () use ($b) { return add_prompt($b); });
+    case 'removePrompt': return superadmin($b, function () use ($b) { return remove_prompt($b); });
     case 'gridTabs': return admin($b, function () { return ['ok' => true, 'tabs' => tab_names()]; });
-    case 'gridGet': return admin($b, function () use ($b) { return grid_get($b); });
-    case 'gridSave': return admin($b, function () use ($b) { return grid_save($b); });
-    case 'gridDeleteRow': return admin($b, function () use ($b) { return grid_delete_row($b); });
+    case 'gridGet': return admin($b, function ($me) use ($b) { return grid_get($b, $me); });
+    case 'gridSave': return admin($b, function ($me) use ($b) { return grid_save($b, $me); });
+    case 'gridDeleteRow': return superadmin($b, function () use ($b) { return grid_delete_row($b); });
     case 'gridNewProject': return admin($b, function () use ($b) { return grid_new_project($b); });
-    case 'gridColumns': return admin($b, function () use ($b) { return grid_columns($b); });
-    case 'gridSetColumns': return admin($b, function () use ($b) { return grid_set_columns($b); });
+    case 'gridColumns': return superadmin($b, function () use ($b) { return grid_columns($b); });
+    case 'gridSetColumns': return superadmin($b, function () use ($b) { return grid_set_columns($b); });
     case 'projectRename': return admin($b, function () use ($b) { return project_rename($b); });
-    case 'projectDelete': return admin($b, function () use ($b) { return project_delete($b); });
-    case 'importData': return admin($b, function () use ($b) { return import_data($b); });
+    case 'projectDelete': return superadmin($b, function () use ($b) { return project_delete($b); });
+    case 'importData': return superadmin($b, function () use ($b) { return import_data($b); });
     default: return ['ok' => false, 'error' => 'Unknown request.'];
   }
 }
@@ -113,6 +114,9 @@ function login(array $b): array {
     return ['ok' => false, 'error' => 'Email ID or password is incorrect.'];
   }
   log_login($email, $u['name'], 'Success');
+  if ($email === SUPER_EMAIL && $u['role'] !== 'superadmin' && !q("SELECT id FROM cd_users WHERE role = 'superadmin' AND active = 1")->fetch()) {
+    q("UPDATE cd_users SET role = 'superadmin' WHERE id = ?", [$u['id']]); $u['role'] = 'superadmin';
+  }
   $token = bin2hex(random_bytes(32));
   q('DELETE FROM cd_sessions WHERE expires_at < ?', [now()]);
   q('INSERT INTO cd_sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)', [hash('sha256', $token), $u['id'], date('Y-m-d H:i:s', time() + SESSION_HOURS * 3600)]);
@@ -126,10 +130,15 @@ function auth(array $b): array {
   if ((int)$u['active'] !== 1) return ['ok' => false, 'expired' => true, 'error' => 'Your account is no longer active.'];
   return ['ok' => true, 'user' => $u];
 }
-function admin(array $b, callable $fn): array {
+function is_super(array $u): bool { return $u['role'] === 'superadmin'; }
+function is_admin(array $u): bool { return $u['role'] === 'admin' || $u['role'] === 'superadmin'; }
+function clean_role($r): string { return in_array($r, ['superadmin', 'admin'], true) ? $r : 'user'; }
+function superadmin(array $b, callable $fn): array { return admin($b, $fn, true); }
+function admin(array $b, callable $fn, bool $super = false): array {
   $a = auth($b);
   if (!$a['ok']) return $a;
-  if ($a['user']['role'] !== 'admin') return ['ok' => false, 'error' => 'Only admins can do this.'];
+  if (!is_admin($a['user'])) return ['ok' => false, 'error' => 'Only admins can do this.'];
+  if ($super && !is_super($a['user'])) return ['ok' => false, 'error' => 'Only the Super Admin can do this.'];
   $pdo = db(); $pdo->beginTransaction();
   try { $r = $fn($a['user']); $pdo->commit(); return $r; }
   catch (Throwable $e) { $pdo->rollBack(); throw $e; }
@@ -144,7 +153,7 @@ function users_list(): array {
                    q('SELECT * FROM cd_users ORDER BY name')->fetchAll());
 }
 function add_user(array $b): array {
-  $email = norm($b['email'] ?? ''); $name = trim((string)($b['name'] ?? '')); $role = ($b['role'] ?? '') === 'admin' ? 'admin' : 'user';
+  $email = norm($b['email'] ?? ''); $name = trim((string)($b['name'] ?? '')); $role = clean_role($b['role'] ?? '');
   if ($name === '') return ['ok' => false, 'error' => "Enter the user's name."];
   if (!valid_email($email)) return ['ok' => false, 'error' => 'Enter a valid email ID.'];
   if (strlen((string)($b['password'] ?? '')) < 6) return ['ok' => false, 'error' => 'Password must be at least 6 characters.'];
@@ -153,12 +162,12 @@ function add_user(array $b): array {
   return ['ok' => true, 'users' => users_list()];
 }
 function set_role(array $b, array $me): array {
-  $email = norm($b['email'] ?? ''); $role = ($b['role'] ?? '') === 'admin' ? 'admin' : 'user';
+  $email = norm($b['email'] ?? ''); $role = clean_role($b['role'] ?? '');
   if ($email === $me['email']) return ['ok' => false, 'error' => 'You cannot change your own role.'];
   $u = q('SELECT * FROM cd_users WHERE email = ?', [$email])->fetch();
   if (!$u) return ['ok' => false, 'error' => 'User not found.'];
-  if ($u['role'] === 'admin' && $role !== 'admin' && (int)q("SELECT COUNT(*) c FROM cd_users WHERE role = 'admin' AND active = 1")->fetch()['c'] <= 1)
-    return ['ok' => false, 'error' => 'At least one admin is needed.'];
+  if ($u['role'] === 'superadmin' && $role !== 'superadmin' && (int)q("SELECT COUNT(*) c FROM cd_users WHERE role = 'superadmin' AND active = 1")->fetch()['c'] <= 1)
+    return ['ok' => false, 'error' => 'At least one Super Admin is needed.'];
   q('UPDATE cd_users SET role = ? WHERE id = ?', [$role, $u['id']]);
   return ['ok' => true, 'users' => users_list()];
 }
@@ -172,8 +181,10 @@ function reset_password(array $b): array {
 function remove_user(array $b, array $me): array {
   $email = norm($b['email'] ?? '');
   if ($email === $me['email']) return ['ok' => false, 'error' => 'You cannot remove yourself.'];
-  $u = q('SELECT id FROM cd_users WHERE email = ?', [$email])->fetch();
+  $u = q('SELECT id, role FROM cd_users WHERE email = ?', [$email])->fetch();
   if (!$u) return ['ok' => false, 'error' => 'User not found.'];
+  if ($u['role'] === 'superadmin' && (int)q("SELECT COUNT(*) c FROM cd_users WHERE role = 'superadmin' AND active = 1")->fetch()['c'] <= 1)
+    return ['ok' => false, 'error' => 'At least one Super Admin is needed.'];
   q('DELETE FROM cd_sessions WHERE user_id = ?', [$u['id']]);
   q('DELETE FROM cd_users WHERE id = ?', [$u['id']]);
   return ['ok' => true, 'users' => users_list()];
@@ -244,6 +255,12 @@ function rows_of(int $pid): array {
   return array_map(function ($r) { $r['data'] = json_decode((string)$r['data'], true) ?: []; return $r; },
                    q('SELECT * FROM cd_rows WHERE project_id = ? ORDER BY position, id', [$pid])->fetchAll());
 }
+function grid_cols(int $pid, array $me): array {   // admins do not see payment columns
+  $cols = cols_of($pid);
+  if (is_super($me)) return $cols;
+  $hide = array_map('strtolower', array_values(PAY_COLUMNS));
+  return array_values(array_filter($cols, function ($c) use ($hide) { return !in_array(strtolower(trim($c['name'])), $hide, true); }));
+}
 function cell(array $row, array $col): string { return (string)($row['data'][(string)$col['id']] ?? ''); }
 
 /* ------------------------------------------------------------------ dashboard data */
@@ -278,22 +295,22 @@ function with_data(array $out, array $user): array {
   }
   $out['projects'] = $projects;
   $out['prompts'] = prompts_for($user['email']);
-  if ($user['role'] === 'admin') $out['payments'] = $payments;   // payments never go to normal users
+  if (is_super($user)) $out['payments'] = $payments;   // payments only go to the Super Admin
   $out['sheetName'] = 'Command Deck database';
   $out['updatedAt'] = date('c');
   return $out;
 }
 
 /* ------------------------------------------------------------------ data entry grid */
-function grid_get(array $b): array {
-  $p = project_by_name($b['tab'] ?? ''); $cols = cols_of((int)$p['id']); $rows = rows_of((int)$p['id']);
+function grid_get(array $b, array $me): array {
+  $p = project_by_name($b['tab'] ?? ''); $cols = grid_cols((int)$p['id'], $me); $rows = rows_of((int)$p['id']);
   $values = array_map(function ($r) use ($cols) { return array_map(function ($c) use ($r) { return cell($r, $c); }, $cols); }, $rows);
   return ['ok' => true, 'tab' => $p['name'], 'headerRow' => 0, 'headers' => array_column($cols, 'name'), 'values' => $values,
           'formulas' => [], 'dates' => [], 'locked' => [],
           'lists' => array_map(function ($c) { $l = json_decode((string)$c['list_values'], true); return is_array($l) && $l ? array_values($l) : null; }, $cols)];
 }
-function grid_save(array $b): array {
-  $p = project_by_name($b['tab'] ?? ''); $pid = (int)$p['id']; $cols = cols_of($pid); $rows = rows_of($pid);
+function grid_save(array $b, array $me): array {
+  $p = project_by_name($b['tab'] ?? ''); $pid = (int)$p['id']; $cols = grid_cols($pid, $me); $rows = rows_of($pid);
   $changes = array_slice(is_array($b['changes'] ?? null) ? $b['changes'] : [], 0, 2000);
   $max = 0; foreach ($changes as $ch) $max = max($max, (int)($ch['r'] ?? 0));
   for ($i = count($rows); $i < min($max, 5000); $i++) {
@@ -411,7 +428,7 @@ function import_data(array $b): array {
   foreach ((array)($d['users'] ?? []) as $u) {
     $email = norm($u['email'] ?? ''); if (!valid_email($email) || q('SELECT id FROM cd_users WHERE email = ?', [$email])->fetch()) continue;
     q('INSERT INTO cd_users (email, name, role, pass_hash, legacy_salt, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [$email, (string)($u['name'] ?? ''), ($u['role'] ?? '') === 'admin' ? 'admin' : 'user', (string)($u['hash'] ?? ''), (string)($u['salt'] ?? ''), empty($u['active']) ? 0 : 1, !empty($u['created']) && strtotime((string)$u['created']) ? date('Y-m-d H:i:s', strtotime((string)$u['created'])) : now()]);
+      [$email, (string)($u['name'] ?? ''), clean_role($u['role'] ?? ''), (string)($u['hash'] ?? ''), (string)($u['salt'] ?? ''), empty($u['active']) ? 0 : 1, !empty($u['created']) && strtotime((string)$u['created']) ? date('Y-m-d H:i:s', strtotime((string)$u['created'])) : now()]);
     $nu++;
   }
   if (!empty($d['prompts'])) { q('DELETE FROM cd_prompts'); foreach ((array)$d['prompts'] as $p) if (trim((string)($p['message'] ?? '')) !== '') q('INSERT INTO cd_prompts (email, message, days) VALUES (?, ?, ?)', [(string)$p['email'], (string)$p['message'], (string)($p['days'] ?? 'Daily')]); }

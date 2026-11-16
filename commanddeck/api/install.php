@@ -45,8 +45,8 @@ if (is_file($cfgFile)) {
     foreach (schema($driver) as $sql) { try { $pdo->exec($sql); } catch (PDOException $e) { if (stripos($sql, 'CREATE INDEX') !== 0) throw $e; } }
     date_default_timezone_set('Asia/Kolkata');
     $s = $pdo->prepare('SELECT id FROM cd_users WHERE email = ?'); $s->execute([$aEmail]);
-    if ($s->fetch()) $pdo->prepare("UPDATE cd_users SET name = ?, role = 'admin', pass_hash = ?, legacy_salt = NULL, active = 1 WHERE email = ?")->execute([$aName, password_hash($aPass, PASSWORD_DEFAULT), $aEmail]);
-    else $pdo->prepare("INSERT INTO cd_users (email, name, role, pass_hash, active, created_at) VALUES (?, ?, 'admin', ?, 1, ?)")->execute([$aEmail, $aName, password_hash($aPass, PASSWORD_DEFAULT), date('Y-m-d H:i:s')]);
+    if ($s->fetch()) $pdo->prepare("UPDATE cd_users SET name = ?, role = 'superadmin', pass_hash = ?, legacy_salt = NULL, active = 1 WHERE email = ?")->execute([$aName, password_hash($aPass, PASSWORD_DEFAULT), $aEmail]);
+    else $pdo->prepare("INSERT INTO cd_users (email, name, role, pass_hash, active, created_at) VALUES (?, ?, 'superadmin', ?, 1, ?)")->execute([$aEmail, $aName, password_hash($aPass, PASSWORD_DEFAULT), date('Y-m-d H:i:s')]);
     $cfg = ['driver' => $driver, 'db_host' => $host, 'db_name' => $name, 'db_user' => $user, 'db_pass' => $pass, 'timezone' => 'Asia/Kolkata'];
     if ($driver === 'sqlite') $cfg['sqlite_path'] = __DIR__ . '/test.sqlite';
     if (file_put_contents($cfgFile, "<?php\n// Written by install.php. Keep this file private. Never upload it to GitHub.\nreturn " . var_export($cfg, true) . ";\n", LOCK_EX) === false)
