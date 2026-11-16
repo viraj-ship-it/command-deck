@@ -26,6 +26,16 @@ const COLUMNS = [
 const PAY_COLUMNS = ['milestone' => 'Payment Milestone', 'stage' => 'Linked Stage', 'percent' => 'Payment %',
                      'received' => 'Payment Received', 'receivedDate' => 'Received Date'];
 const TL_COLUMNS = ['stage' => 'Timeline Stage', 'date' => 'Planned Date', 'done' => 'Completed Date'];
+const BRAND_SEED = [   // first-time grouping of the projects moved from the Google Sheet
+  'ms realty' => 'MS Realty', 'ms realty product photoshoot' => 'MS Realty', 'time traveller-ms realty' => 'MS Realty',
+  'ajmera manhattan' => 'Ajmera', 'ajmera oid mom influencer' => 'Ajmera', 'ajmera realty drive' => 'Ajmera',
+  'ajmera realty cdb' => 'Ajmera', 'ajmera realty higher floor' => 'Ajmera',
+  'raymond realty' => 'Raymond Realty', 'raymond x realty drive' => 'Raymond Realty',
+  'time traveller-ghp' => 'GHP', 'time traveller-savvy group' => 'Savvy Group',
+  'vtp x realty drive' => 'VTP', 'rohan x realty drive' => 'Rohan', 'hiranandani director av' => 'Hiranandani',
+  'adani event' => 'Adani', 'west avenue-navratri reel' => 'West Avenue', 'preeti developers-drone shoot' => 'Preeti Developers',
+  'krch diwali add' => 'KRCH',
+];
 
 final class UserError extends Exception {}
 function out(array $a): void { echo json_encode($a, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); exit; }
@@ -53,6 +63,7 @@ $raw = file_get_contents('php://input');
 $b = json_decode($raw ?: '{}', true);
 if (!is_array($b)) $b = [];
 try {
+  ensure_brand_column();
   out(route($b));
 } catch (UserError $e) {
   out(['ok' => false, 'error' => $e->getMessage()]);
@@ -76,7 +87,8 @@ function route(array $b): array {
     case 'listPrompts': return superadmin($b, function () { return ['ok' => true, 'prompts' => list_prompts()]; });
     case 'addPrompt': return superadmin($b, function () use ($b) { return add_prompt($b); });
     case 'removePrompt': return superadmin($b, function () use ($b) { return remove_prompt($b); });
-    case 'gridTabs': return admin($b, function () { return ['ok' => true, 'tabs' => tab_names()]; });
+    case 'gridTabs': return admin($b, function () { return ['ok' => true, 'tabs' => tab_names(), 'brands' => brand_map()]; });
+    case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return admin($b, function ($me) use ($b) { return grid_get($b, $me); });
     case 'gridSave': return admin($b, function ($me) use ($b) { return grid_save($b, $me); });
     case 'gridDeleteRow': return superadmin($b, function () use ($b) { return grid_delete_row($b); });
@@ -244,6 +256,26 @@ function prompts_for(string $email): array {
 }
 
 /* ------------------------------------------------------------------ projects: storage helpers */
+/* ---- brands: a brand (client) groups one or more projects */
+function seed_brand(string $name): string {
+  $k = preg_replace('/\s*-\s*/', '-', preg_replace('/\s+/', ' ', strtolower(trim($name))));
+  return BRAND_SEED[$k] ?? trim($name);
+}
+function ensure_brand_column(): void {
+  try { q('SELECT brand FROM cd_projects LIMIT 1'); return; }
+  catch (Throwable $e) { /* column missing (older install) */ }
+  try {
+    db()->exec('ALTER TABLE cd_projects ADD COLUMN brand VARCHAR(190) NULL');
+    foreach (q('SELECT id, name FROM cd_projects')->fetchAll() as $p) q('UPDATE cd_projects SET brand = ? WHERE id = ?', [seed_brand($p['name']), $p['id']]);
+  } catch (Throwable $e) { error_log('Command Deck brand column: ' . $e->getMessage()); }
+}
+function brand_of(array $p): string { $b = trim((string)($p['brand'] ?? '')); return $b !== '' ? $b : trim((string)$p['name']); }
+function brand_map(): array { $m = []; foreach (q('SELECT name, brand FROM cd_projects ORDER BY position, id')->fetchAll() as $p) $m[$p['name']] = brand_of($p); return $m; }
+function project_set_brand(array $b): array {
+  $p = project_by_name($b['tab'] ?? ''); $brand = mb_substr(trim((string)($b['brand'] ?? '')), 0, 190);
+  q('UPDATE cd_projects SET brand = ? WHERE id = ?', [$brand !== '' ? $brand : $p['name'], $p['id']]);
+  return ['ok' => true, 'tabs' => tab_names(), 'brands' => brand_map()];
+}
 function tab_names(): array { return array_column(q('SELECT name FROM cd_projects ORDER BY position, id')->fetchAll(), 'name'); }
 function project_by_name($name): array {
   $p = q('SELECT * FROM cd_projects WHERE name = ?', [(string)$name])->fetch();
@@ -290,7 +322,7 @@ function with_data(array $out, array $user): array {
       if ($st !== '' && !preg_match('/^total/i', $st)) $tl[] = ['stage' => $st, 'date' => $get($row, TL_COLUMNS['date']), 'completed' => $get($row, TL_COLUMNS['done'])];
     }
     if (!$items && !$pay) continue;
-    $projects[] = ['name' => $p['name'], 'hasFeedback' => isset($byName['Feedback']), 'rows' => $items, 'timeline' => $tl];
+    $projects[] = ['name' => $p['name'], 'brand' => brand_of($p), 'hasFeedback' => isset($byName['Feedback']), 'rows' => $items, 'timeline' => $tl];
     if ($pay) $payments[] = ['project' => $p['name'], 'milestones' => $pay];
   }
   $out['projects'] = $projects;
@@ -349,12 +381,13 @@ function grid_new_project(array $b): array {
   if ($name === '') return ['ok' => false, 'error' => 'Enter the project name.'];
   if (q('SELECT id FROM cd_projects WHERE name = ?', [$name])->fetch()) return ['ok' => false, 'error' => 'A project with this name already exists.'];
   $pos = (int)(q('SELECT COALESCE(MAX(position), 0) m FROM cd_projects')->fetch()['m']) + 1;
-  q('INSERT INTO cd_projects (name, position, created_at) VALUES (?, ?, ?)', [$name, $pos, now()]);
+  $brand = mb_substr(trim((string)($b['brand'] ?? '')), 0, 190);
+  q('INSERT INTO cd_projects (name, brand, position, created_at) VALUES (?, ?, ?, ?)', [$name, $brand !== '' ? $brand : $name, $pos, now()]);
   $pid = (int)db()->lastInsertId();
   $src = !empty($b['copyFrom']) ? q('SELECT id FROM cd_projects WHERE name = ?', [(string)$b['copyFrom']])->fetch() : null;
   $cols = $src ? cols_of((int)$src['id']) : array_map(function ($h, $i) { return ['name' => $h, 'position' => $i + 1, 'list_values' => null]; }, array_values(COLUMNS), array_keys(array_values(COLUMNS)));
   foreach ($cols as $c) q('INSERT INTO cd_columns (project_id, position, name, list_values) VALUES (?, ?, ?, ?)', [$pid, $c['position'], $c['name'], $c['list_values']]);
-  return ['ok' => true, 'tab' => $name, 'tabs' => tab_names()];
+  return ['ok' => true, 'tab' => $name, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
 function grid_columns(array $b): array {
   $p = project_by_name($b['tab'] ?? '');
@@ -388,8 +421,9 @@ function project_rename(array $b): array {
   $p = project_by_name($b['tab'] ?? ''); $name = trim((string)($b['name'] ?? ''));
   if ($name === '') return ['ok' => false, 'error' => 'Enter the new name.'];
   if ($name !== $p['name'] && q('SELECT id FROM cd_projects WHERE name = ?', [$name])->fetch()) return ['ok' => false, 'error' => 'A project with this name already exists.'];
-  q('UPDATE cd_projects SET name = ? WHERE id = ?', [$name, $p['id']]);
-  return ['ok' => true, 'tab' => $name, 'tabs' => tab_names()];
+  $brand = brand_of($p) === trim($p['name']) ? $name : brand_of($p);   // a one-project brand follows the project's new name
+  q('UPDATE cd_projects SET name = ?, brand = ? WHERE id = ?', [$name, $brand, $p['id']]);
+  return ['ok' => true, 'tab' => $name, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
 function project_delete(array $b): array {
   $p = project_by_name($b['tab'] ?? '');
@@ -407,7 +441,7 @@ function import_data(array $b): array {
   $np = 0; $nr = 0;
   foreach ($d['tabs'] as $i => $t) {
     $name = trim((string)($t['name'] ?? '')); if ($name === '' || $name[0] === '_') continue;
-    q('INSERT INTO cd_projects (name, position, created_at) VALUES (?, ?, ?)', [$name, $i + 1, now()]); $pid = (int)db()->lastInsertId(); $np++;
+    q('INSERT INTO cd_projects (name, brand, position, created_at) VALUES (?, ?, ?, ?)', [$name, trim((string)($t['brand'] ?? '')) !== '' ? trim((string)$t['brand']) : seed_brand($name), $i + 1, now()]); $pid = (int)db()->lastInsertId(); $np++;
     $headers = is_array($t['headers'] ?? null) ? $t['headers'] : []; $lists = is_array($t['lists'] ?? null) ? $t['lists'] : [];
     $ids = [];
     foreach ($headers as $j => $h) {

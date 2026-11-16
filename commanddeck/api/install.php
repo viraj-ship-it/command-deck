@@ -20,7 +20,7 @@ function schema(string $driver): array {
     "CREATE TABLE IF NOT EXISTS cd_sessions (token_hash CHAR(64) NOT NULL PRIMARY KEY, user_id INT NOT NULL, expires_at DATETIME NOT NULL)$tail",
     "CREATE TABLE IF NOT EXISTS cd_login_log (id $id, logged_at DATETIME NOT NULL, email VARCHAR(190) NOT NULL DEFAULT '', name VARCHAR(190) NOT NULL DEFAULT '', result VARCHAR(60) NOT NULL DEFAULT '')$tail",
     "CREATE TABLE IF NOT EXISTS cd_prompts (id $id, email VARCHAR(190) NOT NULL DEFAULT 'ALL', message TEXT NOT NULL, days VARCHAR(100) NOT NULL DEFAULT 'Daily')$tail",
-    "CREATE TABLE IF NOT EXISTS cd_projects (id $id, name VARCHAR(190) NOT NULL UNIQUE, position INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL)$tail",
+    "CREATE TABLE IF NOT EXISTS cd_projects (id $id, name VARCHAR(190) NOT NULL UNIQUE, brand VARCHAR(190) NULL, position INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL)$tail",
     "CREATE TABLE IF NOT EXISTS cd_columns (id $id, project_id INT NOT NULL, position INT NOT NULL DEFAULT 0, name VARCHAR(190) NOT NULL, list_values TEXT NULL)$tail",
     "CREATE TABLE IF NOT EXISTS cd_rows (id $id, project_id INT NOT NULL, position INT NOT NULL DEFAULT 0, data $txt NOT NULL, updated_at DATETIME NOT NULL)$tail",
     "CREATE INDEX idx_cols_project ON cd_columns (project_id, position)",
