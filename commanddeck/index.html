@@ -351,7 +351,7 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
       <div class="scroll"><svg id="bars" viewBox="0 0 860 340" width="100%" style="min-width:680px"></svg></div>
     </div>
     <div class="panel s12" id="paypanel" hidden>
-      <div class="ph"><h2>Payment Milestones</h2><span class="role admin">SUPER ADMIN</span></div>
+      <div class="ph"><h2>Payment Milestones</h2><span class="role admin">ADMIN ONLY</span></div>
       <div id="paybody"></div>
     </div>
 
@@ -1098,7 +1098,7 @@ async function assignDlg(u){
   const d=document.createElement("div"); d.className="gdlg";
   d.innerHTML=`<div class="box" role="dialog" aria-modal="true" style="width:min(560px,100%);max-height:88vh;display:flex;flex-direction:column">
     <h3>Assign projects · ${esc(u.name||u.email)}</h3>
-    <p class="note" style="margin:0 0 10px">${esc(u.name||"This user")} will see only these projects on the dashboard and can edit them in Edit Data. Payment columns stay hidden.</p>
+    <p class="note" style="margin:0 0 10px">${esc(u.name||"This user")} will see only these projects on the dashboard and can edit them in Edit Data. Payment and timeline columns stay hidden.</p>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="asfind" type="text" placeholder="Find a project or brand" style="flex:1"><button class="btn ghost" type="button" data-a="all" style="padding:7px 10px;font-size:12px">Select shown</button><button class="btn ghost" type="button" data-a="none" style="padding:7px 10px;font-size:12px">Clear</button></div>
     <div id="aslist" style="overflow:auto;flex:1;min-height:160px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>
     <div class="row" style="justify-content:space-between;align-items:center"><span id="ascount" class="note" style="margin:0"></span>
@@ -1198,7 +1198,7 @@ function tourSteps(){
     {el:()=>panelOf("tbl"), title:"The detailed tracker", text:"Each row is one video. Filled green chips are done, amber outlines are pending, faint ones don't apply. The last column says what is pending next."}
   ];
   if(admin){
-    if(sup) s.push({el:()=>visible($("paypanel"))?$("paypanel"):null, title:"Payments (Super Admin only)", text:"Payment milestones are linked to production stages. When a stage is done the milestone is <b>earned</b>; mark it received in Edit Data once the client pays."});
+    s.push({el:()=>visible($("paypanel"))?$("paypanel"):null, title:"Payments (admins only)", text:"Payment milestones are linked to production stages. When a stage is done the milestone is <b>earned</b>; mark it received in Edit Data once the client pays."});
     s.push({el:()=>$("openpanel"), title:"What needs attention", text:"Open Items lists every unfinished video, and Data Checks flags mistakes in the data. Both should shrink to zero."});
     if(sup) s.push({el:()=>$("userspanel"), title:"Manage the team", text:"Add people, set them as User, Admin or Super Admin, reset passwords or remove access here."});
     if(sup) s.push({el:()=>$("logpanel"), title:"Who signed in", text:"Every sign-in attempt with date and time, including failed ones."});
