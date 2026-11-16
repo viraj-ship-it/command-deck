@@ -1445,6 +1445,7 @@ function gridInstall(){
       <button class="btn ghost" type="button" id="gbrand">Brand</button>
       <button class="btn ghost" type="button" id="gpdel">Delete project</button>
       <button class="btn ghost" type="button" id="gxls">Export Excel</button>
+      <button class="btn ghost" type="button" id="ghist">History</button>
       <button class="btn ghost" type="button" id="greload">Reload</button>
       <span class="sp"></span><span id="gstatus" role="status"></span>
       <button class="btn" type="button" id="gclose">Back to dashboard</button></div>
@@ -1461,7 +1462,7 @@ function gridInstall(){
   $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
   $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
   $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg; gridFiltersInit();
-  $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gbrand").onclick=gridBrandDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel;
+  $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gbrand").onclick=gridBrandDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel; $("ghist").onclick=()=>historyDlg(GRID.tab);
   const w=$("gwrap");
   w.addEventListener("mousedown",e=>{ if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td) return; gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c); });
   w.addEventListener("dblclick",e=>{ const td=e.target.closest("td[data-c]"); if(td) gridEdit(); });
@@ -1473,7 +1474,7 @@ function gridInstall(){
     const x=document.createElement("button"); x.className="btn ghost"; x.id="gxopen"; x.type="button"; x.textContent="Export Excel"; x.hidden=true; x.onclick=exportExcel; tb.parentNode.insertBefore(x,tb); }
 }
 function gridShowButton(){ gridInstall(); $("gopen").hidden=!gridCanEdit(); if($("gxopen")) $("gxopen").hidden=!isAdmin();
-  ["gdel","gcols","gpdel","gbrand"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); });
+  ["gdel","gcols","gpdel","gbrand","ghist"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); });
   ["gnew","gren","gxls"].forEach(id=>{ if($(id)) $(id).hidden=!isAdmin(); }); }
 
 async function gridOpen(){
@@ -1697,6 +1698,60 @@ async function gridNewProjectDlg(){
   }catch(err){ gStatus(err.message,"err"); }
 }
 function gStatus(t,cls){ const s=$("gstatus"); if(s){ s.textContent=t; s.className=cls||""; } }
+// ---- edit history (Super Admin)
+async function historyDlg(project){
+  const H={project:project||"", email:"", q:"", items:[], more:false, users:{}};
+  const d=document.createElement("div"); d.className="gdlg";
+  d.innerHTML=`<div class="box" role="dialog" aria-modal="true" style="width:min(1100px,100%);max-height:90vh;display:flex;flex-direction:column">
+    <h3>Edit history</h3>
+    <p class="note" style="margin:0 0 10px">Every change made in Edit Data: who, when, which row and column, old value → new value.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <select id="hproj" style="flex:1 1 220px"><option value="">All projects</option>${(GRID.tabs||[]).map(t=>`<option${t===H.project?" selected":""}>${esc(t)}</option>`).join("")}</select>
+      <select id="huser" style="flex:1 1 180px"><option value="">Everyone</option></select>
+      <input id="hq" type="text" placeholder="Search row, column or value" style="flex:2 1 240px">
+    </div>
+    <div id="hlist" style="overflow:auto;flex:1;min-height:200px;border:1px solid var(--line);border-radius:8px"></div>
+    <div class="row" style="justify-content:space-between;align-items:center"><span id="hcnt" class="note" style="margin:0"></span>
+      <span><button class="btn ghost" type="button" data-a="more" hidden>Load older</button> <button class="btn" type="button" data-a="no">Close</button></span></div></div>`;
+  document.body.appendChild(d);
+  const sty=`<style>
+    #hlist table{width:100%;border-collapse:collapse;font-size:12.5px}
+    #hlist th{position:sticky;top:0;background:#0d1f17;color:var(--green);font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;text-align:left;padding:8px 10px;white-space:nowrap}
+    #hlist td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:top}
+    #hlist td.t{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+    #hlist .old{color:#ff9b9b;text-decoration:line-through;text-decoration-color:rgba(255,97,97,.5);white-space:pre-wrap;word-break:break-word}
+    #hlist .new{color:var(--neon);white-space:pre-wrap;word-break:break-word}
+    #hlist .ac{display:inline-block;font:600 10px var(--mono);letter-spacing:.06em;padding:2px 7px;border-radius:4px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+    #hlist .ac.Added{color:var(--neon);border-color:var(--deep)}#hlist .ac.Cleared,#hlist .ac[class*="Deleted"],#hlist .ac[class*="Removed"]{color:var(--red);border-color:rgba(255,97,97,.4)}
+    #hlist .ac.Changed{color:var(--amber);border-color:rgba(255,191,71,.4)}
+    #hlist .hwho b{display:block;color:var(--ink);font-weight:600}#hlist .hwho span{color:var(--muted);font-size:11px}</style>`;
+  const fmt=v=>v==null||v===""?'<span style="color:var(--muted)">—</span>':esc(String(v).length>300?String(v).slice(0,300)+"…":v);
+  const draw=()=>{
+    const allP=!H.project;
+    d.querySelector("#hlist").innerHTML = sty + (H.items.length ? `<table><thead><tr><th>When</th><th>Who</th>${allP?"<th>Project</th>":""}<th>Row</th><th>What</th><th>Column</th><th>Old value</th><th>New value</th></tr></thead><tbody>`+
+      H.items.map(x=>{ const t=new Date(x.time); return `<tr><td class="t">${isNaN(t)?"":fmtDateTime(t)}</td><td class="hwho"><b>${esc(x.name||x.email)}</b><span>${esc(x.email)}</span></td>${allP?`<td>${esc(x.project)}</td>`:""}<td>${esc(x.row||"")}</td>
+        <td><span class="ac ${esc(x.action.replace(/\s/g,""))}">${esc(x.action)}</span></td><td>${esc(x.col||"")}</td><td class="old">${fmt(x.old)}</td><td class="new">${fmt(x.new)}</td></tr>`; }).join("")+`</tbody></table>`
+      : `<p class="note" style="padding:14px">No changes recorded yet${H.project?" for "+esc(H.project):""}.</p>`);
+    d.querySelector("#hcnt").textContent = H.items.length ? `${H.items.length} change${H.items.length>1?"s":""} shown${H.more?" · older ones available":""}` : "";
+    d.querySelector('[data-a="more"]').hidden=!H.more;
+  };
+  const fetchH=async(more)=>{
+    try{ const j=await api("editHistory",{project:H.project, email:H.email, q:H.q, limit:200, before: more && H.items.length ? H.items[H.items.length-1].id : 0});
+      if(!j.ok){ d.querySelector("#hlist").innerHTML=`<p class="note" style="padding:14px;color:var(--red)">${esc(j.error)}</p>`; return; }
+      H.items = more ? H.items.concat(j.items) : j.items; H.more=j.more;
+      const us=d.querySelector("#huser"); if(us.options.length===1 && j.users && !Array.isArray(j.users)) us.innerHTML=`<option value="">Everyone</option>`+Object.entries(j.users).map(([e,n])=>`<option value="${esc(e)}">${esc(n||e)}</option>`).join("");
+      draw();
+    }catch(err){ d.querySelector("#hlist").innerHTML=`<p class="note" style="padding:14px;color:var(--red)">${esc(err.message)}</p>`; }
+  };
+  d.querySelector("#hproj").onchange=e=>{ H.project=e.target.value; fetchH(false); };
+  d.querySelector("#huser").onchange=e=>{ H.email=e.target.value; fetchH(false); };
+  let t=null; d.querySelector("#hq").oninput=e=>{ clearTimeout(t); t=setTimeout(()=>{ H.q=e.target.value.trim(); fetchH(false); },300); };
+  d.querySelector('[data-a="more"]').onclick=()=>fetchH(true);
+  d.querySelector('[data-a="no"]').onclick=()=>d.remove();
+  d.addEventListener("keydown",e=>{ if(e.key==="Escape") d.remove(); e.stopPropagation(); });
+  d.querySelector("#hlist").innerHTML='<p class="note" style="padding:14px">Loading…</p>';
+  fetchH(false);
+}
 // ---- project tools: brand, columns, rename, delete
 function brandOptions(){ const s=new Set([...Object.values(GRID.brands||{}), ...PROJECTS.map(p=>p.brand)]); return [...s].sort((a,b)=>a.localeCompare(b)).map(b=>`<option value="${esc(b)}"></option>`).join(""); }
 async function gridBrandDlg(){
