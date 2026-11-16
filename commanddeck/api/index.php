@@ -58,7 +58,8 @@ function norm($e): string { return strtolower(trim((string)$e)); }
 function valid_email(string $e): bool { return (bool)preg_match('/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/', $e); }
 function iso($dt): string { return $dt ? date('c', strtotime($dt)) : ''; }
 
-/* ------------------------------------------------------------------ entry */
+/* ------------------------------------------------------------------ entry (skipped when another script, e.g. reminders.php, includes this file) */
+if (!defined('CD_LIB')) {
 $raw = file_get_contents('php://input');
 $b = json_decode($raw ?: '{}', true);
 if (!is_array($b)) $b = [];
@@ -66,12 +67,14 @@ try {
   ensure_brand_column();
   ensure_assign_table();
   ensure_edit_log();
+  ensure_reminder_tables();
   out(route($b));
 } catch (UserError $e) {
   out(['ok' => false, 'error' => $e->getMessage()]);
 } catch (Throwable $e) {
   error_log('Command Deck API: ' . $e->getMessage());
   out(['ok' => false, 'error' => 'Server error. Please try again.']);
+}
 }
 
 function route(array $b): array {
@@ -93,6 +96,11 @@ function route(array $b): array {
     case 'getUserProjects': return superadmin($b, function () use ($b) { return get_user_projects($b); });
     case 'setUserProjects': return superadmin($b, function () use ($b) { return set_user_projects($b); });
     case 'scoreboard': return admin($b, function () { return scoreboard(); });
+    case 'reminderSettings': return superadmin($b, function () use ($b) { return reminder_settings($b); });
+    case 'reminderPreview': return superadmin($b, function () { $r = run_reminders(true); return ['ok' => true] + $r; });
+    case 'reminderRunNow': return superadmin($b, function () { $r = run_reminders(false); return ['ok' => true] + $r; });
+    case 'reminderMail': return superadmin($b, function () use ($b) { return reminder_mail_save($b); });
+    case 'reminderTest': return superadmin($b, function ($me) { return reminder_test($me); });
     case 'editHistory': return superadmin($b, function () use ($b) { return edit_history($b); });
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
@@ -588,4 +596,216 @@ function import_data(array $b): array {
     q('INSERT INTO cd_login_log (logged_at, email, name, result) VALUES (?, ?, ?, ?)', [date('Y-m-d H:i:s', $t), (string)$l['email'], (string)$l['name'], (string)$l['result']]);
   }
   return ['ok' => true, 'projects' => $np, 'rows' => $nr, 'users' => $nu, 'prompts' => count((array)($d['prompts'] ?? []))];
+}
+
+/* ------------------------------------------------------------------ deadline reminders (email to Users) */
+// Runs once a day from a cPanel Cron Job (api/reminders.php). For every active User it collects the timeline
+// stages of their assigned projects that are due tomorrow or overdue (Planned Date passed, no Completed Date)
+// and sends ONE email. Each stage is emailed once per kind ("due tomorrow" once, "overdue" once).
+function ensure_reminder_tables(): void {
+  try { q('SELECT k FROM cd_settings LIMIT 1'); q('SELECT id FROM cd_reminders LIMIT 1'); return; } catch (Throwable $e) { /* create below */ }
+  global $CFG; $sqlite = ($CFG['driver'] ?? 'mysql') === 'sqlite';
+  $id = $sqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
+  $tail = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+  try {
+    db()->exec("CREATE TABLE IF NOT EXISTS cd_settings (k VARCHAR(60) NOT NULL PRIMARY KEY, v TEXT NULL)$tail");
+    db()->exec("CREATE TABLE IF NOT EXISTS cd_reminders (id $id, sent_at DATETIME NOT NULL, user_id INT NOT NULL, project_id INT NOT NULL,
+      stage VARCHAR(190) NOT NULL, planned DATE NOT NULL, kind VARCHAR(12) NOT NULL, UNIQUE (user_id, project_id, stage, planned, kind))$tail");
+    db()->exec("CREATE TABLE IF NOT EXISTS cd_reminder_log (id $id, sent_at DATETIME NOT NULL, email VARCHAR(190) NOT NULL, name VARCHAR(190) NOT NULL DEFAULT '',
+      subject VARCHAR(300) NOT NULL DEFAULT '', items INT NOT NULL DEFAULT 0, status VARCHAR(20) NOT NULL DEFAULT '', error TEXT NULL)$tail");
+  } catch (Throwable $e) { error_log('Command Deck reminder tables: ' . $e->getMessage()); }
+}
+function setting(string $k, $def = '') { $r = q('SELECT v FROM cd_settings WHERE k = ?', [$k])->fetch(); return $r ? $r['v'] : $def; }
+function set_setting(string $k, $v): void { q('DELETE FROM cd_settings WHERE k = ?', [$k]); q('INSERT INTO cd_settings (k, v) VALUES (?, ?)', [$k, (string)$v]); }
+
+// Planned / Completed dates can be typed in many ways: 2026-11-10, 10-11-2026, 10/11/2026, 21st Feb 2026 …
+function parse_day($s): ?string {
+  $s = trim((string)$s); if ($s === '') return null;
+  if (preg_match('/^(\d{4})-(\d{1,2})-(\d{1,2})/', $s, $m)) return checkdate((int)$m[2], (int)$m[3], (int)$m[1]) ? sprintf('%04d-%02d-%02d', $m[1], $m[2], $m[3]) : null;
+  if (preg_match('/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/', $s, $m)) { $y = (int)$m[3]; if ($y < 100) $y += 2000;   // day first (India)
+    return checkdate((int)$m[2], (int)$m[1], $y) ? sprintf('%04d-%02d-%02d', $y, $m[2], $m[1]) : null; }
+  $t = strtotime(preg_replace('/(\d+)(st|nd|rd|th)\b/i', '$1', $s));
+  return $t ? date('Y-m-d', $t) : null;
+}
+// Timeline stages of one project: [stage, planned (Y-m-d), completed (Y-m-d|null)]
+function project_timeline(int $pid): array {
+  $cols = []; foreach (cols_of($pid) as $c) { $k = trim($c['name']); if (!isset($cols[$k])) $cols[$k] = $c; }
+  if (!isset($cols[TL_COLUMNS['stage']], $cols[TL_COLUMNS['date']])) return [];
+  $out = [];
+  foreach (rows_of($pid) as $r) {
+    $st = trim(cell($r, $cols[TL_COLUMNS['stage']])); if ($st === '' || preg_match('/^total/i', $st)) continue;
+    $pl = parse_day(cell($r, $cols[TL_COLUMNS['date']])); if (!$pl) continue;
+    $done = isset($cols[TL_COLUMNS['done']]) ? trim(cell($r, $cols[TL_COLUMNS['done']])) : '';
+    $out[] = ['stage' => $st, 'planned' => $pl, 'done' => $done];
+  }
+  return $out;
+}
+// What each User would get today. $onlyNew = skip stages already emailed.
+function reminder_plan(bool $onlyNew = true): array {
+  $today = date('Y-m-d'); $tomorrow = date('Y-m-d', strtotime('+1 day'));
+  $plan = [];
+  foreach (q("SELECT * FROM cd_users WHERE role = 'user' AND active = 1 ORDER BY name")->fetchAll() as $u) {
+    $items = [];
+    foreach (q('SELECT p.id, p.name FROM cd_projects p JOIN cd_user_projects a ON a.project_id = p.id WHERE a.user_id = ? ORDER BY p.position, p.id', [$u['id']])->fetchAll() as $p) {
+      foreach (project_timeline((int)$p['id']) as $t) {
+        if ($t['done'] !== '') continue;                                   // completed: nothing to remind
+        $kind = $t['planned'] < $today ? 'overdue' : ($t['planned'] === $tomorrow ? 'tomorrow' : null);
+        if (!$kind) continue;
+        if ($onlyNew && q('SELECT id FROM cd_reminders WHERE user_id = ? AND project_id = ? AND stage = ? AND planned = ? AND kind = ?', [$u['id'], $p['id'], $t['stage'], $t['planned'], $kind])->fetch()) continue;
+        $items[] = ['project_id' => (int)$p['id'], 'project' => $p['name'], 'stage' => $t['stage'], 'planned' => $t['planned'], 'kind' => $kind,
+                    'days' => (int)round((strtotime($today) - strtotime($t['planned'])) / 86400)];
+      }
+    }
+    if ($items) $plan[] = ['user' => $u, 'items' => $items];
+  }
+  return $plan;
+}
+function reminder_email(array $u, array $items, string $site): array {
+  $over = array_values(array_filter($items, function ($i) { return $i['kind'] === 'overdue'; }));
+  $soon = array_values(array_filter($items, function ($i) { return $i['kind'] === 'tomorrow'; }));
+  $first = explode(' ', trim($u['name'] ?: 'there'))[0];
+  $projects = array_values(array_unique(array_column($items, 'project')));
+  $pl = count($projects) > 2 ? $projects[0] . ', ' . $projects[1] . ' +' . (count($projects) - 2) . ' more' : implode(', ', $projects);
+  $subject = $over ? '⚠️ ' . count($over) . ' stage' . (count($over) > 1 ? 's' : '') . ' overdue – ' . $pl
+                   : '⏰ Deadline tomorrow – ' . $pl;
+  $d = function ($ymd) { return date('d M Y', strtotime($ymd)); };
+  $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+  $row = function ($i, $late) use ($d, $h) {
+    return '<tr><td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">' . $h($i['project']) . '</td><td style="padding:8px 10px;border-bottom:1px solid #e5e7eb"><b>' . $h($i['stage']) . '</b></td>'
+         . '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb">' . $d($i['planned']) . '</td>'
+         . '<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;color:' . ($late ? '#b91c1c' : '#b45309') . ';font-weight:600">' . ($late ? $i['days'] . ' day' . ($i['days'] > 1 ? 's' : '') . ' late' : 'Due tomorrow') . '</td></tr>';
+  };
+  $table = function ($list, $late) use ($row) {
+    return '<table style="border-collapse:collapse;width:100%;font-size:14px;margin:8px 0 18px"><tr style="background:#f3f4f6;text-align:left"><th style="padding:8px 10px">Project</th><th style="padding:8px 10px">Stage</th><th style="padding:8px 10px">Planned date</th><th style="padding:8px 10px">Status</th></tr>'
+         . implode('', array_map(function ($i) use ($row, $late) { return $row($i, $late); }, $list)) . '</table>';
+  };
+  $html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px;line-height:1.5">'
+        . '<p>Hi ' . $h($first) . ',</p>';
+  $text = "Hi $first,\n\n";
+  if ($over) {
+    $html .= '<p>The following stage' . (count($over) > 1 ? 's were' : ' was') . ' not completed by the planned date:</p>' . $table($over, true)
+           . '<p style="background:#fef2f2;border-left:4px solid #dc2626;padding:10px 12px">Missed deadlines affect your performance score on the Team Scoreboard. Please complete the pending work as soon as possible.</p>';
+    $text .= "The following stages were not completed by the planned date:\n";
+    foreach ($over as $i) $text .= "- {$i['project']} – {$i['stage']} – planned " . $d($i['planned']) . " – {$i['days']} day(s) late\n";
+    $text .= "\nMissed deadlines affect your performance score on the Team Scoreboard. Please complete the pending work as soon as possible.\n\n";
+  }
+  if ($soon) {
+    $html .= '<p>' . ($over ? 'Also due tomorrow:' : 'A friendly reminder: the following stage' . (count($soon) > 1 ? 's are' : ' is') . ' due tomorrow.') . '</p>' . $table($soon, false);
+    $text .= ($over ? "Also due tomorrow:\n" : "A friendly reminder: the following stages are due tomorrow:\n");
+    foreach ($soon as $i) $text .= "- {$i['project']} – {$i['stage']} – planned " . $d($i['planned']) . "\n";
+    $text .= "\n";
+  }
+  $html .= '<p>Once a stage is done, open <b>Edit Data</b> and fill in its <b>Completed Date</b>.</p>'
+         . ($site ? '<p><a href="' . $h($site) . '" style="display:inline-block;background:#16a34a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px;font-weight:600">Open Command Deck</a></p>' : '')
+         . '<p style="color:#6b7280;font-size:12px;margin-top:24px">This is an automated message from Brikkin Command Deck.</p></div>';
+  $text .= "Once a stage is done, open Edit Data and fill in its Completed Date.\n" . ($site ? "$site\n" : '') . "\n– Brikkin Command Deck (automated message)";
+  return ['subject' => $subject, 'html' => $html, 'text' => $text];
+}
+function reminder_cc(): array {
+  return array_values(array_filter(array_map('norm', preg_split('/[\s,;]+/', (string)setting('reminder_cc', ''))), 'valid_email'));
+}
+function run_reminders(bool $dry = false): array {
+  global $CFG;
+  $plan = reminder_plan(true); $site = (string)($CFG['site_url'] ?? 'https://barterro.com/commanddeck/');
+  $res = ['users' => 0, 'items' => 0, 'sent' => 0, 'failed' => 0, 'preview' => []];
+  if (!$dry && setting('reminders_enabled', '0') !== '1') return $res + ['skipped' => 'Reminders are switched off.'];
+  foreach ($plan as $x) {
+    $u = $x['user']; $m = reminder_email($u, $x['items'], $site);
+    $res['users']++; $res['items'] += count($x['items']);
+    if ($dry) { $res['preview'][] = ['name' => $u['name'], 'email' => $u['email'], 'subject' => $m['subject'], 'items' => $x['items'], 'html' => $m['html']]; continue; }
+    $err = send_mail($u['email'], reminder_cc(), $m['subject'], $m['html'], $m['text']);
+    q('INSERT INTO cd_reminder_log (sent_at, email, name, subject, items, status, error) VALUES (?, ?, ?, ?, ?, ?, ?)', [now(), $u['email'], $u['name'], mb_substr($m['subject'], 0, 300), count($x['items']), $err ? 'Failed' : 'Sent', $err]);
+    if ($err) { $res['failed']++; continue; }
+    $res['sent']++;
+    foreach ($x['items'] as $i) {
+      try { q('INSERT INTO cd_reminders (sent_at, user_id, project_id, stage, planned, kind) VALUES (?, ?, ?, ?, ?, ?)', [now(), $u['id'], $i['project_id'], $i['stage'], $i['planned'], $i['kind']]); }
+      catch (Throwable $e) { /* already recorded */ }
+    }
+  }
+  set_setting('reminders_last_run', now());
+  return $res;
+}
+
+/* ---- sending email: SMTP from config.php (cPanel email account), else PHP mail() */
+function send_mail(string $to, array $cc, string $subject, string $html, string $text): ?string {
+  global $CFG; $m = $CFG['mail'] ?? [];
+  $from = (string)($m['from'] ?? ($m['user'] ?? '')); $fromName = (string)($m['from_name'] ?? 'Brikkin Command Deck');
+  if ($from === '') return 'Sender email is not set in api/config.php (mail → from).';
+  $enc = function ($s) { return '=?UTF-8?B?' . base64_encode($s) . '?='; };
+  $bnd = 'cd' . bin2hex(random_bytes(8));
+  $headers = ['From: ' . $enc($fromName) . " <$from>", 'Reply-To: ' . (string)($m['reply_to'] ?? $from), 'MIME-Version: 1.0',
+              "Content-Type: multipart/alternative; boundary=\"$bnd\"", 'Date: ' . date('r'), 'Message-ID: <' . bin2hex(random_bytes(12)) . '@' . (explode('@', $from)[1] ?? 'localhost') . '>'];
+  if ($cc) $headers[] = 'Cc: ' . implode(', ', $cc);
+  $body = "--$bnd\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text))
+        . "--$bnd\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html)) . "--$bnd--\r\n";
+  if (empty($m['host'])) {   // no SMTP configured: use the server's mail()
+    $ok = @mail($to, $enc($subject), $body, implode("\r\n", $headers), '-f' . $from);
+    return $ok ? null : 'PHP mail() could not send. Add SMTP settings in api/config.php.';
+  }
+  return smtp_send($m, $from, array_merge([$to], $cc), "To: $to\r\nSubject: " . $enc($subject) . "\r\n" . implode("\r\n", $headers) . "\r\n\r\n" . $body);
+}
+function smtp_send(array $m, string $from, array $rcpts, string $data): ?string {
+  $host = (string)$m['host']; $port = (int)($m['port'] ?? 465); $secure = strtolower((string)($m['secure'] ?? ($port === 465 ? 'ssl' : 'tls')));
+  $ctx = stream_context_create(['ssl' => ['verify_peer' => !empty($m['verify_ssl']), 'verify_peer_name' => !empty($m['verify_ssl']), 'allow_self_signed' => empty($m['verify_ssl'])]]);
+  $fp = @stream_socket_client(($secure === 'ssl' ? 'ssl://' : 'tcp://') . "$host:$port", $errno, $errstr, 20, STREAM_CLIENT_CONNECT, $ctx);
+  if (!$fp) return "Could not connect to $host:$port ($errstr)";
+  stream_set_timeout($fp, 20);
+  $read = function () use ($fp) { $out = ''; while (($l = fgets($fp, 1024)) !== false) { $out .= $l; if (strlen($l) < 4 || $l[3] === ' ') break; } return $out; };
+  $cmd = function ($c, $expect) use ($fp, $read) { if ($c !== null) fwrite($fp, $c . "\r\n"); $r = $read(); if (!in_array((int)substr($r, 0, 3), (array)$expect, true)) throw new RuntimeException(trim($r) ?: 'no reply'); return $r; };
+  try {
+    $cmd(null, 220);
+    $ehlo = 'EHLO ' . (gethostname() ?: 'localhost');
+    $cmd($ehlo, 250);
+    if ($secure === 'tls') { $cmd('STARTTLS', 220); if (!stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) throw new RuntimeException('TLS failed'); $cmd($ehlo, 250); }
+    if (!empty($m['user'])) { $cmd('AUTH LOGIN', 334); $cmd(base64_encode((string)$m['user']), 334); $cmd(base64_encode((string)($m['pass'] ?? '')), 235); }
+    $cmd("MAIL FROM:<$from>", 250);
+    foreach ($rcpts as $r) $cmd("RCPT TO:<$r>", [250, 251]);
+    $cmd('DATA', 354);
+    $cmd(preg_replace('/^\./m', '..', rtrim($data, "\r\n")) . "\r\n.", 250);
+    $cmd('QUIT', [221, 250]);
+    fclose($fp); return null;
+  } catch (Throwable $e) { @fclose($fp); return 'SMTP: ' . $e->getMessage(); }
+}
+
+/* ---- Super Admin panel actions */
+function reminder_settings(array $b): array {
+  global $CFG;
+  if (array_key_exists('enabled', $b)) set_setting('reminders_enabled', !empty($b['enabled']) ? '1' : '0');
+  if (array_key_exists('cc', $b)) {
+    $bad = array_filter(preg_split('/[\s,;]+/', (string)$b['cc']), function ($e) { return trim($e) !== '' && !valid_email(norm($e)); });
+    if ($bad) return ['ok' => false, 'error' => 'Not a valid email: ' . implode(', ', $bad)];
+    set_setting('reminder_cc', implode(', ', array_map('norm', array_filter(preg_split('/[\s,;]+/', (string)$b['cc']), 'strlen'))));
+  }
+  $m = $CFG['mail'] ?? [];
+  return ['ok' => true, 'enabled' => setting('reminders_enabled', '0') === '1', 'cc' => setting('reminder_cc', ''), 'lastRun' => iso(setting('reminders_last_run', '')),
+          'mailReady' => !empty($m['from']) || !empty($m['user']), 'from' => (string)($m['from'] ?? ($m['user'] ?? '')), 'smtp' => !empty($m['host']),
+          'host' => (string)($m['host'] ?? ''), 'port' => (int)($m['port'] ?? 465), 'fromName' => (string)($m['from_name'] ?? 'Brikkin Command Deck'), 'hasPass' => !empty($m['pass']),
+          'cronPath' => __DIR__ . '/reminders.php',
+          'log' => array_map(function ($r) { return ['time' => iso($r['sent_at']), 'email' => $r['email'], 'name' => $r['name'], 'subject' => $r['subject'], 'items' => (int)$r['items'], 'status' => $r['status'], 'error' => $r['error']]; },
+                             q('SELECT * FROM cd_reminder_log ORDER BY id DESC LIMIT 50')->fetchAll())];
+}
+// Save the sender mailbox into config.php (stays on the server; the password is never sent back to the browser)
+function reminder_mail_save(array $b): array {
+  global $CFG;
+  $host = trim((string)($b['host'] ?? '')); $port = (int)($b['port'] ?? 465); $user = norm($b['user'] ?? ''); $pass = (string)($b['pass'] ?? '');
+  $fromName = trim((string)($b['fromName'] ?? '')) ?: 'Brikkin Command Deck';
+  if ($host === '' || !preg_match('/^[a-z0-9.\-]+$/i', $host)) return ['ok' => false, 'error' => 'Enter the mail server (for example mail.barterro.com).'];
+  if (!valid_email($user)) return ['ok' => false, 'error' => 'Enter the full sender email address.'];
+  if ($port < 1 || $port > 65535) return ['ok' => false, 'error' => 'Enter a valid port (465 or 587).'];
+  $old = $CFG['mail'] ?? [];
+  if ($pass === '') { if (empty($old['pass']) || ($old['user'] ?? '') !== $user) return ['ok' => false, 'error' => 'Enter the email password.']; $pass = (string)$old['pass']; }
+  $cfg = $CFG; $cfg['mail'] = ['host' => $host, 'port' => $port, 'secure' => $port === 465 ? 'ssl' : 'tls', 'user' => $user, 'pass' => $pass, 'from' => $user, 'from_name' => $fromName];
+  if (empty($cfg['site_url'])) $cfg['site_url'] = 'https://barterro.com/commanddeck/';
+  if (empty($cfg['cron_key'])) $cfg['cron_key'] = bin2hex(random_bytes(16));
+  $file = __DIR__ . '/config.php';
+  if (@file_put_contents($file, "<?php\n// Written by install.php / Command Deck. Keep this file private. Never upload it to GitHub.\nreturn " . var_export($cfg, true) . ";\n", LOCK_EX) === false)
+    return ['ok' => false, 'error' => 'Could not save api/config.php on the server.'];
+  @chmod($file, 0600); if (function_exists('opcache_invalidate')) @opcache_invalidate($file, true); $CFG = $cfg;
+  return reminder_settings([]);
+}
+function reminder_test(array $me): array {
+  $m = reminder_email($me, [['project' => 'Sample Project', 'stage' => 'Shoot', 'planned' => date('Y-m-d', strtotime('-3 days')), 'kind' => 'overdue', 'days' => 3, 'project_id' => 0],
+                            ['project' => 'Sample Project', 'stage' => 'First Cut', 'planned' => date('Y-m-d', strtotime('+1 day')), 'kind' => 'tomorrow', 'days' => -1, 'project_id' => 0]], 'https://barterro.com/commanddeck/');
+  $err = send_mail($me['email'], [], '[TEST] ' . $m['subject'], $m['html'], $m['text']);
+  return $err ? ['ok' => false, 'error' => $err] : ['ok' => true, 'to' => $me['email']];
 }

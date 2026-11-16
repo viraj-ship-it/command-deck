@@ -56,7 +56,7 @@ if (is_file($cfgFile)) {
     if ($driver === 'sqlite') $cfg['sqlite_path'] = __DIR__ . '/test.sqlite';
     if (file_put_contents($cfgFile, "<?php\n// Written by install.php. Keep this file private. Never upload it to GitHub.\nreturn " . var_export($cfg, true) . ";\n", LOCK_EX) === false)
       throw new RuntimeException('Could not write api/config.php. Check that the api folder is writable.');
-    @chmod($cfgFile, 0600);
+    @chmod($cfgFile, 0600); if (function_exists('opcache_invalidate')) @opcache_invalidate($cfgFile, true);
     $msg = 'Installed! The tables are created and your admin account is ready. Next: open migrate.html to move the Google Sheet data, then sign in to the dashboard.';
     $done = true;
   } catch (Throwable $e) {
