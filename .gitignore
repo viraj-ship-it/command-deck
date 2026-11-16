@@ -1,3 +1,5 @@
 .DS_Store
 *.log
 .env
+commanddeck/api/config.php
+*.sqlite
