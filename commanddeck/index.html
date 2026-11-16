@@ -235,6 +235,15 @@ tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--neon),inset 0 1px 0 var(--n
 .sug .nm mark{background:transparent;color:var(--neon);text-shadow:0 0 8px rgba(61,255,143,.5)}
 .sug .pc{font-family:var(--mono);font-size:12px;color:var(--neon);text-align:right}
 .sug .pc.mid{color:var(--amber)}
+.remgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.remcard{border:1px solid var(--line);border-radius:10px;padding:14px;background:rgba(0,0,0,.2)}
+.remcard h3{margin:0 0 10px;font:600 11px var(--mono);letter-spacing:.12em;color:var(--green);text-transform:uppercase}
+.remf{display:grid;grid-template-columns:1fr 90px;gap:8px}
+.remsw{display:flex;gap:10px;align-items:center;cursor:pointer;font-weight:600}.remsw input{width:auto;accent-color:var(--neon);transform:scale(1.25)}
+.remcron{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:10px 12px}.remcron summary{cursor:pointer;font-weight:600}
+.remcron code{display:block;font:12px var(--mono);background:#04110a;border:1px solid var(--line2);border-radius:6px;padding:10px;color:var(--neon);word-break:break-all;user-select:all}
+.rempv{border:1px solid var(--line);border-radius:8px;margin:8px 0;overflow:hidden}.rempv summary{cursor:pointer;padding:10px 12px;background:rgba(0,0,0,.25)}
+.rempv .mail{background:#fff;color:#111;padding:14px}
 .sctbl{width:100%;border-collapse:collapse;font-size:13px}
 .sctbl th{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--green);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);white-space:nowrap}
 .sctbl td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -427,6 +436,45 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
       </div>
       <div class="scroll" style="max-height:420px;overflow-y:auto"><table class="utable" id="logtable"></table></div>
       <p class="note">Every sign-in attempt is saved in the Command Deck database (latest 2,000 kept).</p>
+    </div>
+
+    <div class="panel s12" id="rempanel" hidden>
+      <div class="ph"><h2>Deadline Reminders</h2><span class="role admin">SUPER ADMIN</span></div>
+      <p class="note" style="margin:0 0 12px">Every morning each User gets one email listing their timeline stages that are <b>due tomorrow</b> or <b>overdue</b> (Planned Date passed, no Completed Date). Each stage is emailed only once for “due tomorrow” and once for “overdue”.</p>
+      <div class="remgrid">
+        <div class="remcard">
+          <h3>1 · Status</h3>
+          <label class="remsw"><input type="checkbox" id="remon"><span>Send reminders automatically</span></label>
+          <p class="note" id="remstat" style="margin:8px 0 0"></p>
+        </div>
+        <div class="remcard">
+          <h3>2 · Sender email</h3>
+          <div class="remf"><div class="fld"><label for="rmhost">Mail server</label><input id="rmhost" type="text" placeholder="mail.barterro.com"></div>
+            <div class="fld"><label for="rmport">Port</label><input id="rmport" type="number" value="465"></div></div>
+          <div class="fld"><label for="rmuser">Sender email</label><input id="rmuser" type="email" placeholder="alerts@barterro.com" autocomplete="off"></div>
+          <div class="fld"><label for="rmpass">Email password</label><input id="rmpass" type="password" autocomplete="new-password" placeholder="••••••••"></div>
+          <div class="fld"><label for="rmname">Sender name</label><input id="rmname" type="text" value="Brikkin Command Deck"></div>
+          <button class="btn ghost" type="button" id="rmsave">Save sender</button>
+        </div>
+        <div class="remcard">
+          <h3>3 · CC</h3>
+          <div class="fld"><label for="remcc">CC on every reminder (comma separated)</label><input id="remcc" type="text" placeholder="manager@brikkin.in, ops@brikkin.in"></div>
+          <button class="btn ghost" type="button" id="remccsave">Save CC</button>
+          <h3 style="margin-top:16px">4 · Try it</h3>
+          <div class="btnrow" style="justify-content:flex-start">
+            <button class="btn ghost" type="button" id="remtest">Send test email to me</button>
+            <button class="btn ghost" type="button" id="remprev">Preview today</button>
+            <button class="btn ghost" type="button" id="remrun">Send now</button>
+          </div>
+        </div>
+      </div>
+      <div class="msg" id="remmsg" style="margin:10px 0"></div>
+      <div id="remprevbox"></div>
+      <details class="remcron"><summary>cPanel Cron Job (runs every morning)</summary>
+        <p class="note">cPanel → <b>Cron Jobs</b> → Common Settings: <b>Once Per Day</b>, Minute <b>0</b>, Hour <b>4</b> (= 9:30 am IST on most servers, which run on UTC). Command:</p>
+        <code id="remcmd"></code></details>
+      <h3 style="margin:16px 0 6px;font-size:13px">Recently sent</h3>
+      <div class="scroll" style="max-height:300px;overflow-y:auto"><table class="utable" id="remlog"></table></div>
     </div>
   </div>
 </div>
@@ -981,7 +1029,8 @@ function enterApp(j){
   $("gate").hidden=true; $("app").hidden=false;
   showData(j);
   $("logpanel").hidden = !isSuper();
-  if(isSuper()){ loadUsers(); loadLog(); loadPrompts(); }
+  if(isSuper()){ loadUsers(); loadLog(); loadPrompts(); loadReminders(); }
+  $("rempanel").hidden = !isSuper();
   $("scorepanel").hidden = !isAdmin(); if(isAdmin()) loadScores();
   gridShowButton();
   maybeStartTour();
@@ -993,7 +1042,7 @@ function signOut(msg){
   stopVira();
   if(TOKEN) api("logout").catch(()=>{});
   TOKEN=null; ME=null; setTok(null);
-  $("lpass").value=""; $("pwpanel").hidden=true; $("userspanel").hidden=true; $("openpanel").hidden=true; $("checkspanel").hidden=true; $("paypanel").hidden=true; $("logpanel").hidden=true; $("scorepanel").hidden=true; SCORE=null; if($("vmpanel")) $("vmpanel").hidden=true; PAY=null; LOG=[];
+  $("lpass").value=""; $("pwpanel").hidden=true; $("userspanel").hidden=true; $("openpanel").hidden=true; $("checkspanel").hidden=true; $("paypanel").hidden=true; $("logpanel").hidden=true; $("scorepanel").hidden=true; $("rempanel").hidden=true; SCORE=null; if($("vmpanel")) $("vmpanel").hidden=true; PAY=null; LOG=[];
   gateShow(msg);
 }
 
@@ -1116,6 +1165,34 @@ function renderUsers(){
   });
 }
 
+
+// ---- Deadline Reminders (Super Admin)
+function remNote(t,ok){ const m=$("remmsg"); m.textContent=t; m.className="msg "+(ok?"ok":"err"); }
+function remShow(j){
+  $("remon").checked=!!j.enabled;
+  const last=j.lastRun? fmtDateTime(new Date(j.lastRun)) : "never";
+  $("remstat").innerHTML = (j.mailReady? `Sender: <b>${esc(j.from)}</b>` : `<span style="color:var(--amber)">Set the sender email first (step 2).</span>`) + ` · Last run: ${esc(last)}`;
+  if(j.host) $("rmhost").value=j.host; if(j.port) $("rmport").value=j.port; if(j.from) $("rmuser").value=j.from; if(j.fromName) $("rmname").value=j.fromName;
+  $("rmpass").placeholder = j.hasPass ? "Saved · type only to change" : "Email account password";
+  $("remcc").value=j.cc||"";
+  $("remcmd").textContent = "/usr/local/bin/php " + (j.cronPath||"/home2/barte3ae/public_html/commanddeck/api/reminders.php");
+  $("remlog").innerHTML = `<thead><tr><th>Sent</th><th>To</th><th>Subject</th><th>Stages</th><th>Status</th></tr></thead><tbody>`+
+    ((j.log||[]).map(l=>`<tr><td class="num">${esc(fmtDateTime(new Date(l.time)))}</td><td>${esc(l.name)}<br><span class="num" style="color:var(--muted);font-size:11px">${esc(l.email)}</span></td><td>${esc(l.subject)}</td><td class="num">${l.items}</td><td>${l.status==="Sent"?'<span style="color:var(--neon)">Sent</span>':`<span style="color:var(--red)" title="${esc(l.error||"")}">Failed</span><br><span style="font-size:11px;color:var(--muted)">${esc(l.error||"")}</span>`}</td></tr>`).join("") || `<tr><td colspan="5" class="note">No reminders sent yet.</td></tr>`)+`</tbody>`;
+}
+async function remCall(action,payload,okMsg,btn){
+  if(btn) btn.disabled=true;
+  try{ const j=await api(action,payload||{}); if(!j.ok){ remNote(j.error,false); return null; } if(okMsg) remNote(typeof okMsg==="function"?okMsg(j):okMsg,true); return j; }
+  catch(err){ remNote(err.message,false); return null; } finally{ if(btn) btn.disabled=false; }
+}
+async function loadReminders(){ const j=await remCall("reminderSettings",{}); if(j) remShow(j); }
+$("remon").addEventListener("change",async()=>{ const j=await remCall("reminderSettings",{enabled:$("remon").checked}, $("remon").checked?"Reminders switched on.":"Reminders switched off."); if(j) remShow(j); else $("remon").checked=!$("remon").checked; });
+$("rmsave").onclick=async()=>{ const j=await remCall("reminderMail",{host:$("rmhost").value.trim(),port:+$("rmport").value,user:$("rmuser").value.trim(),pass:$("rmpass").value,fromName:$("rmname").value.trim()},"Sender saved. Now press “Send test email to me”.",$("rmsave")); if(j){ $("rmpass").value=""; remShow(j); } };
+$("remccsave").onclick=async()=>{ const j=await remCall("reminderSettings",{cc:$("remcc").value},"CC saved.",$("remccsave")); if(j) remShow(j); };
+$("remtest").onclick=()=>remCall("reminderTest",{},j=>`Test email sent to ${j.to}. Check the inbox (and spam).`,$("remtest"));
+$("remprev").onclick=async()=>{ const j=await remCall("reminderPreview",{},j=>j.users?`${j.users} user(s) would get an email today · ${j.items} stage(s).`:"Nobody needs a reminder today.",$("remprev"));
+  if(!j) return; $("remprevbox").innerHTML=(j.preview||[]).map(x=>`<details class="rempv"><summary><b>${esc(x.name)}</b> · ${esc(x.email)} · ${esc(x.subject)}</summary><div class="mail">${x.html}</div></details>`).join(""); };
+$("remrun").onclick=async()=>{ if(!confirm("Send today's reminder emails now?")) return;
+  const j=await remCall("reminderRunNow",{},j=>j.skipped?j.skipped:`${j.sent} email(s) sent${j.failed?`, ${j.failed} failed`:""}.`,$("remrun")); if(j){ $("remprevbox").innerHTML=""; loadReminders(); } };
 // ---- Team Scoreboard (Admins): on-time timeline stages of each User's assigned projects
 let SCORE=null;
 async function loadScores(){
