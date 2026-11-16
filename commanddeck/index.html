@@ -391,7 +391,7 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
       </form>
       <div class="msg" id="umsg" role="status"></div>
       <div class="scroll"><table class="utable" id="utable"></table></div>
-      <p class="note">Users are saved in the Command Deck database, with passwords stored as secure hashes. Share each new user's email ID and password with them directly. Users see all projects; admins also manage users.</p>
+      <p class="note">Users are saved in the Command Deck database, with passwords stored as secure hashes. Share each new user's email ID and password with them directly. Users see and edit only the projects assigned to them (Projects column). Admins and Super Admins see all projects.</p>
     </div>
     <div class="panel s12" id="logpanel" hidden>
       <div class="ph"><h2>Login History</h2><span class="role admin">SUPER ADMIN</span></div>
@@ -941,6 +941,7 @@ function gateShow(msg){ $("gate").hidden=false; $("app").hidden=true; const m=$(
 function showData(j){
   const when = j.updatedAt ? new Date(j.updatedAt).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
   load(j.projects||[], j.payments||null, `Command Deck database · loaded ${when}`);
+  if(ME && typeof gridShowButton==="function") gridShowButton();
 }
 const isSuper = () => !!ME && ME.role==="superadmin";
 const isAdmin = () => !!ME && (ME.role==="admin" || ME.role==="superadmin");
@@ -1050,13 +1051,14 @@ async function userAction(action, payload, okMsg, btn){
 function renderUsers(){
   const admins = USERS.filter(u=>u.role==="superadmin").length;
   const t=$("utable");
-  t.innerHTML = `<thead><tr><th>Name</th><th>Email ID</th><th>Role</th><th>Added</th><th>Last login</th><th>Reset password</th><th></th></tr></thead><tbody></tbody>`;
+  t.innerHTML = `<thead><tr><th>Name</th><th>Email ID</th><th>Role</th><th>Projects</th><th>Added</th><th>Last login</th><th>Reset password</th><th></th></tr></thead><tbody></tbody>`;
   const tb=t.querySelector("tbody");
   USERS.forEach(u=>{
     const self = ME && u.email===ME.email, lastAdmin = u.role==="superadmin" && admins<=1;
     const tr=document.createElement("tr");
     tr.innerHTML = `<td></td><td class="num"></td>
       <td><select aria-label="Role" ${self||lastAdmin?"disabled":""}><option value="user">User</option><option value="admin">Admin</option><option value="superadmin">Super Admin</option></select></td>
+      <td class="pj"></td>
       <td class="num"></td>
       <td class="num"></td>
       <td><div class="inline"><input type="text" placeholder="New password" aria-label="New password"><button class="lnk" type="button">Reset</button></div></td>
@@ -1064,9 +1066,12 @@ function renderUsers(){
     tr.children[0].textContent = (u.name||"") + (self?" (you)":"");
     tr.children[1].textContent = u.email;
     const d = u.created ? new Date(u.created) : null;
-    tr.children[3].textContent = d && !isNaN(d) ? fmtDate(d) : "—";
+    tr.children[4].textContent = d && !isNaN(d) ? fmtDate(d) : "—";
     const ll = u.lastLogin ? new Date(u.lastLogin) : null;
-    tr.children[4].textContent = ll && !isNaN(ll) ? fmtDateTime(ll) : "Never";
+    tr.children[5].textContent = ll && !isNaN(ll) ? fmtDateTime(ll) : "Never";
+    const pj=tr.querySelector(".pj");
+    if(u.role==="user"){ const n=u.projects||0; pj.innerHTML=`<button class="lnk" type="button">${n? n+" project"+(n>1?"s":"") : '<span style="color:var(--amber)">None</span>'} · Assign</button>`; pj.querySelector("button").onclick=()=>assignDlg(u); }
+    else pj.innerHTML=`<span style="color:var(--muted);font-size:12px">All projects</span>`;
     const sel=tr.querySelector("select"); sel.value=u.role;
     sel.addEventListener("change", ()=>userAction("setRole",{email:u.email,role:sel.value},`${u.name||u.email} is now ${sel.value==="user"?"a User":"a"+(sel.value==="admin"?"n Admin":" Super Admin")}.`,sel));
     const pwIn=tr.querySelector(".inline input"), pwBtn=tr.querySelector(".inline button");
@@ -1082,6 +1087,45 @@ function renderUsers(){
     });
     tb.appendChild(tr);
   });
+}
+// ---- assign projects to a User (Super Admin)
+async function assignDlg(u){
+  let j; try{ j=await api("getUserProjects",{email:u.email}); }catch(err){ return note(err.message,false); }
+  if(!j.ok) return note(j.error,false);
+  const brands=(j.brands&&!Array.isArray(j.brands))?j.brands:{}, chosen=new Set(j.projects);
+  const groups=new Map(); j.all.forEach(n=>{ const b=brands[n]||n; if(!groups.has(b)) groups.set(b,[]); groups.get(b).push(n); });
+  const sorted=[...groups].sort((a,b)=>a[0].localeCompare(b[0]));
+  const d=document.createElement("div"); d.className="gdlg";
+  d.innerHTML=`<div class="box" role="dialog" aria-modal="true" style="width:min(560px,100%);max-height:88vh;display:flex;flex-direction:column">
+    <h3>Assign projects · ${esc(u.name||u.email)}</h3>
+    <p class="note" style="margin:0 0 10px">${esc(u.name||"This user")} will see only these projects on the dashboard and can edit them in Edit Data. Payment columns stay hidden.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><input id="asfind" type="text" placeholder="Find a project or brand" style="flex:1"><button class="btn ghost" type="button" data-a="all" style="padding:7px 10px;font-size:12px">Select shown</button><button class="btn ghost" type="button" data-a="none" style="padding:7px 10px;font-size:12px">Clear</button></div>
+    <div id="aslist" style="overflow:auto;flex:1;min-height:160px;border:1px solid var(--line);border-radius:8px;padding:6px 10px"></div>
+    <div class="row" style="justify-content:space-between;align-items:center"><span id="ascount" class="note" style="margin:0"></span>
+      <span><button class="btn ghost" type="button" data-a="no">Cancel</button> <button class="btn" type="button" data-a="yes">Save</button></span></div></div>`;
+  document.body.appendChild(d);
+  const list=d.querySelector("#aslist"), find=d.querySelector("#asfind");
+  const shown=()=>{ const q=find.value.trim().toLowerCase(); return sorted.map(([b,ps])=>[b, ps.filter(p=>!q || p.toLowerCase().includes(q) || b.toLowerCase().includes(q))]).filter(([,ps])=>ps.length); };
+  const count=()=>{ d.querySelector("#ascount").textContent=`${chosen.size} of ${j.all.length} projects selected`; };
+  const draw=()=>{ const g=shown();
+    list.innerHTML = g.length ? g.map(([b,ps])=>`<div style="margin:6px 0 10px"><div style="font:600 10.5px var(--mono);letter-spacing:.14em;color:var(--green);margin-bottom:4px">${esc(b.toUpperCase())}</div>`+
+      ps.map(p=>`<label style="display:flex;gap:10px;align-items:center;padding:6px 4px;border-radius:6px;cursor:pointer"><input type="checkbox" data-p="${esc(p)}" ${chosen.has(p)?"checked":""} style="width:auto;accent-color:var(--neon)"><span>${esc(p)}</span></label>`).join("")+`</div>`).join("")
+      : `<p class="note">No project matches.</p>`;
+    list.querySelectorAll("input[type=checkbox]").forEach(c=>c.onchange=()=>{ c.checked?chosen.add(c.dataset.p):chosen.delete(c.dataset.p); count(); });
+    count(); };
+  draw(); find.oninput=draw;
+  d.querySelector('[data-a="all"]').onclick=()=>{ shown().forEach(([,ps])=>ps.forEach(p=>chosen.add(p))); draw(); };
+  d.querySelector('[data-a="none"]').onclick=()=>{ shown().forEach(([,ps])=>ps.forEach(p=>chosen.delete(p))); draw(); };
+  d.querySelector('[data-a="no"]').onclick=()=>d.remove();
+  d.addEventListener("keydown",e=>{ if(e.key==="Escape") d.remove(); });
+  d.querySelector('[data-a="yes"]').onclick=async()=>{
+    const btn=d.querySelector('[data-a="yes"]'); btn.disabled=true;
+    try{ const r=await api("setUserProjects",{email:u.email, projects:[...chosen]});
+      if(!r.ok){ btn.disabled=false; return note(r.error,false); }
+      d.remove(); USERS=r.users; renderUsers(); note(`${u.name||u.email} now has ${r.count} project${r.count===1?"":"s"}.`,true);
+    }catch(err){ btn.disabled=false; note(err.message,false); }
+  };
+  setTimeout(()=>find.focus(),20);
 }
 $("uform").addEventListener("submit", async e=>{
   e.preventDefault();
@@ -1336,7 +1380,7 @@ async function loadPrompts(){
 
 // ================= Data Entry: edit the data like a spreadsheet =================
 const GRID = { tab:null, data:null, sel:{r:0,c:0}, editing:null, queue:new Map(), timer:null, busy:false, extra:5, dirty:false };
-const gridCanEdit = () => isAdmin();        // later: open this per user
+const gridCanEdit = () => isAdmin() || (!!ME && PROJECTS.length>0);   // Users edit only their assigned projects
 
 function gridInstall(){
   if(document.getElementById("gridview")) return;
@@ -1410,7 +1454,8 @@ function gridInstall(){
     const x=document.createElement("button"); x.className="btn ghost"; x.id="gxopen"; x.type="button"; x.textContent="Export Excel"; x.hidden=true; x.onclick=exportExcel; tb.parentNode.insertBefore(x,tb); }
 }
 function gridShowButton(){ gridInstall(); $("gopen").hidden=!gridCanEdit(); if($("gxopen")) $("gxopen").hidden=!isAdmin();
-  ["gdel","gcols","gpdel","gbrand"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); }); }
+  ["gdel","gcols","gpdel","gbrand"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); });
+  ["gnew","gren","gxls"].forEach(id=>{ if($(id)) $(id).hidden=!isAdmin(); }); }
 
 async function gridOpen(){
   gridInstall(); $("gridview").hidden=false; document.body.style.overflow="hidden";
