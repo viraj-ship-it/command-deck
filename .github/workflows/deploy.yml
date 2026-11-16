@@ -21,3 +21,9 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./commanddeck/
           server-dir: ${{ secrets.FTP_SERVER_DIR }}
+                    exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            **/config.php
+            **/*.sqlite
