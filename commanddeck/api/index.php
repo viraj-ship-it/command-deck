@@ -92,6 +92,7 @@ function route(array $b): array {
     case 'gridTabs': return member($b, function ($me) { $t = tab_names($me); return ['ok' => true, 'tabs' => $t, 'brands' => array_intersect_key(brand_map(), array_flip($t))]; });
     case 'getUserProjects': return superadmin($b, function () use ($b) { return get_user_projects($b); });
     case 'setUserProjects': return superadmin($b, function () use ($b) { return set_user_projects($b); });
+    case 'scoreboard': return admin($b, function () { return scoreboard(); });
     case 'editHistory': return superadmin($b, function () use ($b) { return edit_history($b); });
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
@@ -354,6 +355,13 @@ function edit_history(array $b): array {
   return ['ok' => true, 'more' => $more, 'users' => $users, 'items' => array_map(function ($r) {
     return ['id' => (int)$r['id'], 'time' => iso($r['logged_at']), 'email' => $r['email'], 'name' => $r['name'], 'project' => $r['project'], 'row' => $r['row_label'],
             'action' => $r['action'], 'col' => $r['col'], 'old' => $r['old_value'], 'new' => $r['new_value']]; }, $rows)];
+}
+function scoreboard(): array {   // Users with the projects assigned to them; the score itself is worked out in the dashboard
+  $out = [];
+  foreach (q("SELECT id, email, name FROM cd_users WHERE role = 'user' AND active = 1 ORDER BY name")->fetchAll() as $u)
+    $out[] = ['email' => $u['email'], 'name' => $u['name'],
+              'projects' => array_column(q('SELECT p.name FROM cd_projects p JOIN cd_user_projects a ON a.project_id = p.id WHERE a.user_id = ? ORDER BY p.position, p.id', [$u['id']])->fetchAll(), 'name')];
+  return ['ok' => true, 'users' => $out];
 }
 function get_user_projects(array $b): array {
   $u = q('SELECT id, role FROM cd_users WHERE email = ?', [norm($b['email'] ?? '')])->fetch();
