@@ -65,6 +65,7 @@ if (!is_array($b)) $b = [];
 try {
   ensure_brand_column();
   ensure_assign_table();
+  ensure_edit_log();
   out(route($b));
 } catch (UserError $e) {
   out(['ok' => false, 'error' => $e->getMessage()]);
@@ -91,6 +92,7 @@ function route(array $b): array {
     case 'gridTabs': return member($b, function ($me) { $t = tab_names($me); return ['ok' => true, 'tabs' => $t, 'brands' => array_intersect_key(brand_map(), array_flip($t))]; });
     case 'getUserProjects': return superadmin($b, function () use ($b) { return get_user_projects($b); });
     case 'setUserProjects': return superadmin($b, function () use ($b) { return set_user_projects($b); });
+    case 'editHistory': return superadmin($b, function () use ($b) { return edit_history($b); });
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
     case 'gridSave': return member($b, function ($me) use ($b) { return grid_save($b, $me); });
@@ -143,6 +145,7 @@ function auth(array $b): array {
   $u = q('SELECT u.* FROM cd_sessions s JOIN cd_users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?', [hash('sha256', $t), now()])->fetch();
   if (!$u) return ['ok' => false, 'expired' => true, 'error' => 'Your session has ended. Please sign in again.'];
   if ((int)$u['active'] !== 1) return ['ok' => false, 'expired' => true, 'error' => 'Your account is no longer active.'];
+  $GLOBALS['CD_ME'] = $u;   // who is making this request (for the edit history)
   return ['ok' => true, 'user' => $u];
 }
 function is_super(array $u): bool { return $u['role'] === 'superadmin'; }
@@ -287,6 +290,7 @@ function brand_map(): array { $m = []; foreach (q('SELECT name, brand FROM cd_pr
 function project_set_brand(array $b): array {
   $p = project_by_name($b['tab'] ?? ''); $brand = mb_substr(trim((string)($b['brand'] ?? '')), 0, 190);
   q('UPDATE cd_projects SET brand = ? WHERE id = ?', [$brand !== '' ? $brand : $p['name'], $p['id']]);
+  if (brand_of($p) !== ($brand !== '' ? $brand : $p['name'])) log_edit($p, 'Brand changed', '', brand_of($p), $brand !== '' ? $brand : $p['name']);
   return ['ok' => true, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
 function tab_names(?array $me = null): array {
@@ -307,6 +311,49 @@ function assigned_ids(array $me): array { return array_map('intval', array_colum
 function require_access(array $me, array $p): void {
   if (is_admin($me)) return;
   if (!in_array((int)$p['id'], assigned_ids($me), true)) throw new UserError('This project is not assigned to you.');
+}
+/* ---- edit history: every change made from Edit Data is recorded */
+const EDIT_LOG_KEEP = 100000;
+function ensure_edit_log(): void {
+  try { q('SELECT id FROM cd_edit_log LIMIT 1'); return; } catch (Throwable $e) { /* table missing */ }
+  global $CFG; $sqlite = ($CFG['driver'] ?? 'mysql') === 'sqlite';
+  $id = $sqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY';
+  $tail = $sqlite ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+  try {
+    db()->exec("CREATE TABLE IF NOT EXISTS cd_edit_log (id $id, logged_at DATETIME NOT NULL, user_id INT NOT NULL DEFAULT 0, email VARCHAR(190) NOT NULL DEFAULT '', name VARCHAR(190) NOT NULL DEFAULT '',
+       project_id INT NOT NULL DEFAULT 0, project VARCHAR(190) NOT NULL DEFAULT '', row_id INT NOT NULL DEFAULT 0, row_label VARCHAR(300) NOT NULL DEFAULT '',
+       action VARCHAR(40) NOT NULL DEFAULT '', col VARCHAR(190) NOT NULL DEFAULT '', old_value TEXT NULL, new_value TEXT NULL)$tail");
+    db()->exec('CREATE INDEX idx_edit_project ON cd_edit_log (project_id, logged_at)');
+  } catch (Throwable $e) { error_log('Command Deck edit log: ' . $e->getMessage()); }
+}
+function log_edit(array $p, string $action, string $col = '', $old = null, $new = null, int $rowId = 0, string $rowLabel = ''): void {
+  $me = $GLOBALS['CD_ME'] ?? ['id' => 0, 'email' => '', 'name' => ''];
+  q('INSERT INTO cd_edit_log (logged_at, user_id, email, name, project_id, project, row_id, row_label, action, col, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    [now(), (int)$me['id'], (string)$me['email'], (string)$me['name'], (int)$p['id'], (string)$p['name'], $rowId, mb_substr($rowLabel, 0, 300), $action, mb_substr($col, 0, 190),
+     $old === null ? null : mb_substr((string)$old, 0, 5000), $new === null ? null : mb_substr((string)$new, 0, 5000)]);
+}
+function trim_edit_log(): void {
+  if (random_int(1, 50) !== 1) return;
+  $cut = q('SELECT id FROM cd_edit_log ORDER BY id DESC LIMIT 1 OFFSET ' . EDIT_LOG_KEEP)->fetch();
+  if ($cut) q('DELETE FROM cd_edit_log WHERE id <= ?', [$cut['id']]);
+}
+function row_label(array $row, array $allCols, int $r): string {
+  foreach ($allCols as $c) if (trim($c['name']) === 'Deliverables') { $v = trim(cell($row, $c)); if ($v !== '') return $v; }
+  return 'Row ' . $r;
+}
+function edit_history(array $b): array {
+  $w = []; $p = [];
+  if (!empty($b['project'])) { $w[] = 'project = ?'; $p[] = (string)$b['project']; }
+  if (!empty($b['email'])) { $w[] = 'email = ?'; $p[] = norm($b['email']); }
+  if (!empty($b['q'])) { $w[] = '(row_label LIKE ? OR col LIKE ? OR old_value LIKE ? OR new_value LIKE ?)'; $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], (string)$b['q']) . '%'; array_push($p, $l, $l, $l, $l); }
+  if (!empty($b['before'])) { $w[] = 'id < ?'; $p[] = (int)$b['before']; }
+  $limit = max(1, min(500, (int)($b['limit'] ?? 200)));
+  $rows = q('SELECT * FROM cd_edit_log' . ($w ? ' WHERE ' . implode(' AND ', $w) : '') . ' ORDER BY id DESC LIMIT ' . ($limit + 1), $p)->fetchAll();
+  $more = count($rows) > $limit; if ($more) array_pop($rows);
+  $users = array_column(q('SELECT DISTINCT email, name FROM cd_edit_log ORDER BY name')->fetchAll(), 'name', 'email');
+  return ['ok' => true, 'more' => $more, 'users' => $users, 'items' => array_map(function ($r) {
+    return ['id' => (int)$r['id'], 'time' => iso($r['logged_at']), 'email' => $r['email'], 'name' => $r['name'], 'project' => $r['project'], 'row' => $r['row_label'],
+            'action' => $r['action'], 'col' => $r['col'], 'old' => $r['old_value'], 'new' => $r['new_value']]; }, $rows)];
 }
 function get_user_projects(array $b): array {
   $u = q('SELECT id, role FROM cd_users WHERE email = ?', [norm($b['email'] ?? '')])->fetch();
@@ -400,7 +447,7 @@ function grid_save(array $b, array $me): array {
     q('INSERT INTO cd_rows (project_id, position, data, updated_at) VALUES (?, ?, ?, ?)', [$pid, $i + 1, '{}', now()]);
     $rows[] = ['id' => (int)db()->lastInsertId(), 'position' => $i + 1, 'data' => []];
   }
-  $saved = []; $conflicts = []; $touched = [];
+  $saved = []; $conflicts = []; $touched = []; $allCols = cols_of($pid); $logs = [];
   foreach ($changes as $ch) {
     $r = (int)($ch['r'] ?? 0); $c = (int)($ch['c'] ?? 0);
     if ($r < 1 || $c < 1 || $r > count($rows) || $c > count($cols)) continue;
@@ -410,11 +457,14 @@ function grid_save(array $b, array $me): array {
     $v = mb_substr((string)($ch['value'] ?? ''), 0, 5000);
     if ($v === '') unset($row['data'][(string)$col['id']]); else $row['data'][(string)$col['id']] = $v;
     $touched[$r - 1] = true;
+    if ($v !== $cur) $logs[] = [$r, $col['name'], $cur, $v];
     $saved[] = ['r' => $r, 'c' => $c, 'value' => $v, 'iso' => preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : ''];
     unset($row);
   }
   foreach (array_keys($touched) as $i)
     q('UPDATE cd_rows SET data = ?, updated_at = ? WHERE id = ?', [json_encode((object)$rows[$i]['data'], JSON_UNESCAPED_UNICODE), now(), $rows[$i]['id']]);
+  foreach ($logs as [$r, $cn, $old, $new]) log_edit($p, $old === '' ? 'Added' : ($new === '' ? 'Cleared' : 'Changed'), $cn, $old, $new, (int)$rows[$r - 1]['id'], row_label($rows[$r - 1], $allCols, $r));
+  if ($logs) trim_edit_log();
   return ['ok' => true, 'saved' => $saved, 'conflicts' => $conflicts];
 }
 function grid_delete_row(array $b): array {
@@ -423,6 +473,8 @@ function grid_delete_row(array $b): array {
   if ($r < 1 || $r > count($rows)) return ['ok' => false, 'error' => 'Row not found. Reload and try again.'];
   $now = implode("\u{1}", array_map(function ($c) use ($rows, $r) { return cell($rows[$r - 1], $c); }, $cols));
   if (isset($b['check']) && (string)$b['check'] !== $now) return ['ok' => false, 'error' => 'This row was changed by someone else. Reload and try again.'];
+  $snap = []; foreach ($cols as $c) { $v = cell($rows[$r - 1], $c); if ($v !== '') $snap[] = $c['name'] . ': ' . $v; }
+  log_edit($p, 'Deleted row', '', implode("\n", $snap), null, (int)$rows[$r - 1]['id'], row_label($rows[$r - 1], $cols, $r));
   q('DELETE FROM cd_rows WHERE id = ?', [$rows[$r - 1]['id']]);
   q('UPDATE cd_rows SET position = position - 1 WHERE project_id = ? AND position > ?', [$pid, $rows[$r - 1]['position']]);
   return ['ok' => true];
@@ -438,6 +490,7 @@ function grid_new_project(array $b): array {
   $src = !empty($b['copyFrom']) ? q('SELECT id FROM cd_projects WHERE name = ?', [(string)$b['copyFrom']])->fetch() : null;
   $cols = $src ? cols_of((int)$src['id']) : array_map(function ($h, $i) { return ['name' => $h, 'position' => $i + 1, 'list_values' => null]; }, array_values(COLUMNS), array_keys(array_values(COLUMNS)));
   foreach ($cols as $c) q('INSERT INTO cd_columns (project_id, position, name, list_values) VALUES (?, ?, ?, ?)', [$pid, $c['position'], $c['name'], $c['list_values']]);
+  log_edit(['id' => $pid, 'name' => $name], 'New project', '', null, $name . ' (brand: ' . ($brand !== '' ? $brand : $name) . ')');
   return ['ok' => true, 'tab' => $name, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
 function grid_columns(array $b): array {
@@ -454,8 +507,11 @@ function grid_set_columns(array $b): array {
     $list = array_values(array_filter(array_map('trim', is_array($w['list'] ?? null) ? $w['list'] : []), 'strlen'));
     $lv = $list ? json_encode($list, JSON_UNESCAPED_UNICODE) : null; $pos++;
     $id = (int)($w['id'] ?? 0);
-    if ($id && isset($have[$id])) { q('UPDATE cd_columns SET name = ?, list_values = ?, position = ? WHERE id = ?', [$name, $lv, $pos, $id]); $keep[$id] = true; }
-    else q('INSERT INTO cd_columns (project_id, position, name, list_values) VALUES (?, ?, ?, ?)', [$pid, $pos, $name, $lv]);
+    if ($id && isset($have[$id])) {
+      if ($have[$id]['name'] !== $name) log_edit($p, 'Renamed column', $name, $have[$id]['name'], $name);
+      if ((string)$have[$id]['list_values'] !== (string)$lv) log_edit($p, 'Dropdown changed', $name, implode(', ', json_decode((string)$have[$id]['list_values'], true) ?: []), implode(', ', $list));
+      q('UPDATE cd_columns SET name = ?, list_values = ?, position = ? WHERE id = ?', [$name, $lv, $pos, $id]); $keep[$id] = true;
+    } else { q('INSERT INTO cd_columns (project_id, position, name, list_values) VALUES (?, ?, ?, ?)', [$pid, $pos, $name, $lv]); log_edit($p, 'Added column', $name, null, $name); }
   }
   $gone = array_diff(array_keys($have), array_keys($keep));
   if ($gone) {
@@ -464,7 +520,7 @@ function grid_set_columns(array $b): array {
       foreach ($gone as $g) if (array_key_exists((string)$g, $d)) { unset($d[(string)$g]); $changed = true; }
       if ($changed) q('UPDATE cd_rows SET data = ? WHERE id = ?', [json_encode((object)$d, JSON_UNESCAPED_UNICODE), $r['id']]);
     }
-    foreach ($gone as $g) q('DELETE FROM cd_columns WHERE id = ?', [$g]);
+    foreach ($gone as $g) { log_edit($p, 'Removed column', $have[$g]['name'], $have[$g]['name'], null); q('DELETE FROM cd_columns WHERE id = ?', [$g]); }
   }
   return grid_columns($b);
 }
@@ -474,11 +530,13 @@ function project_rename(array $b): array {
   if ($name !== $p['name'] && q('SELECT id FROM cd_projects WHERE name = ?', [$name])->fetch()) return ['ok' => false, 'error' => 'A project with this name already exists.'];
   $brand = brand_of($p) === trim($p['name']) ? $name : brand_of($p);   // a one-project brand follows the project's new name
   q('UPDATE cd_projects SET name = ?, brand = ? WHERE id = ?', [$name, $brand, $p['id']]);
+  if ($name !== $p['name']) { q('UPDATE cd_edit_log SET project = ? WHERE project_id = ?', [$name, $p['id']]); log_edit(['id' => $p['id'], 'name' => $name], 'Renamed project', '', $p['name'], $name); }
   return ['ok' => true, 'tab' => $name, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
 function project_delete(array $b): array {
   $p = project_by_name($b['tab'] ?? '');
   if (trim((string)($b['confirm'] ?? '')) !== $p['name']) return ['ok' => false, 'error' => 'Type the project name exactly to delete it.'];
+  log_edit($p, 'Deleted project', '', $p['name'] . ' · ' . count(rows_of((int)$p['id'])) . ' rows', null);
   q('DELETE FROM cd_rows WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_columns WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_user_projects WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_projects WHERE id = ?', [$p['id']]);
   return ['ok' => true, 'tabs' => tab_names()];
 }
