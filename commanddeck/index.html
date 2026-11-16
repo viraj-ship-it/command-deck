@@ -204,6 +204,13 @@ tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--neon),inset 0 1px 0 var(--n
 .sug .hd:hover{background:transparent}
 .sug .empty{color:var(--muted);cursor:default}
 .scur{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px}
+.sug li.brand .nm{color:var(--neon);font-weight:600}
+.sug li.brand .nm::before{content:"BRAND";font:600 9.5px var(--mono);letter-spacing:.12em;color:#04110a;background:var(--neon);border-radius:3px;padding:2px 5px;margin-right:8px;vertical-align:1px}
+.sug li.sub{padding-left:28px}
+.bchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.bchips button{font:500 12px var(--body);color:var(--muted);background:transparent;border:1px solid var(--line2);border-radius:999px;padding:5px 12px;cursor:pointer}
+.bchips button:hover{color:var(--ink);border-color:var(--green)}
+.bchips button.on{color:#04110a;background:var(--neon);border-color:var(--neon);font-weight:600}
 .scur b{color:var(--neon);font-weight:500}
 .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
 .tab{font-family:var(--display);font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 14px;cursor:pointer}
@@ -271,11 +278,12 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
   <div class="search" id="search">
     <div class="sbox">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
-      <input id="q" type="text" role="combobox" aria-expanded="false" aria-controls="sug" aria-autocomplete="list" autocomplete="off" placeholder="Search a project" aria-label="Search projects">
+      <input id="q" type="text" role="combobox" aria-expanded="false" aria-controls="sug" aria-autocomplete="list" autocomplete="off" placeholder="Search a brand or project" aria-label="Search brands and projects">
       <button class="sclear" id="qclear" type="button" hidden>Clear</button>
     </div>
     <ul class="sug" id="sug" role="listbox" hidden></ul>
     <div class="scur" id="scur"></div>
+    <div class="bchips" id="bchips" hidden></div>
   </div>
 
   <section class="kpis" id="kpis"></section>
@@ -368,6 +376,17 @@ const isNA = v => /^n\/?a$/i.test(String(v||"").trim());
 const isURL = v => /^https?:\/\//i.test(String(v||"").trim());
 
 let PROJECTS = [], FILTER = null, PAY = null;
+const BKEY = b => "B:"+b;
+const isBrandKey = k => typeof k==="string" && k.startsWith("B:");
+const brandsList = () => { const m=new Map(); PROJECTS.forEach(p=>{ if(!m.has(p.brand)) m.set(p.brand,[]); m.get(p.brand).push(p); }); return [...m].map(([name,projects])=>({name,projects})); };
+const brandProjects = b => PROJECTS.filter(p=>p.brand===b);
+function scopeProjects(){
+  if(FILTER==="All") return PROJECTS;
+  if(isBrandKey(FILTER)) return brandProjects(FILTER.slice(2));
+  return PROJECTS.filter(p=>p.name===FILTER);
+}
+const scopeLabel = () => FILTER==="All" ? "All Projects" : isBrandKey(FILTER) ? FILTER.slice(2) : (FILTER||"");
+const scopeBrand = () => isBrandKey(FILTER) ? FILTER.slice(2) : (PROJECTS.find(p=>p.name===FILTER)||{}).brand;
 
 function parseDate(v){
   if (v instanceof Date) return {d:isNaN(v)?null:v, text:false};
@@ -437,16 +456,26 @@ function openSug(showAll){
   const list=[];
   if(!q || "all projects overall".includes(ql)){ const allRows=PROJECTS.flatMap(p=>p.rows), n=allRows.length;
     list.push({k:"All",label:"All Projects",meta:`Overall view · ${PROJECTS.length} projects · ${n} deliverables`,pc:n?Math.round(allRows.reduce((a,r)=>a+r.pct,0)/n*100)+"%":""}); }
-  PROJECTS.forEach(p=>{
+  const projItem=(p,sub,brandHit)=>{
     const hitName=p.name.toLowerCase().includes(ql);
     const hitRows=q? p.rows.filter(r=>(r.display+" "+(r.editor||"")+" "+(r.concept||"")).toLowerCase().includes(ql)) : [];
-    if(!q || hitName || hitRows.length){const st=projStats(p);
-      list.push({k:p.name,label:p.name,meta: (!hitName && hitRows.length)? `matches: ${hitRows.slice(0,3).map(r=>r.short).join(", ")}${hitRows.length>3?" …":""}` : `${st.N} deliverables · ${st.open} open`,pc:Math.round(st.pct*100)+"%"});}
+    if(!q || hitName || brandHit || hitRows.length){const st=projStats(p);
+      const base=`${!sub && p.brand!==p.name.trim()?p.brand+" · ":""}${st.N} deliverables · ${st.open} open`;
+      return {k:p.name,label:p.name,cls:sub?"sub":"",meta: (!hitName && !brandHit && hitRows.length)? `matches: ${hitRows.slice(0,3).map(r=>r.short).join(", ")}${hitRows.length>3?" …":""}` : base,pc:Math.round(st.pct*100)+"%"};}
+    return null;
+  };
+  brandsList().forEach(b=>{
+    if(b.projects.length===1){ const it=projItem(b.projects[0],false,!!q && b.name.toLowerCase().includes(ql)); if(it) list.push(it); return; }
+    const brandHit=!!q && b.name.toLowerCase().includes(ql);
+    const items=b.projects.map(p=>projItem(p,true,brandHit)).filter(Boolean);
+    if(!q || brandHit || items.length){ const rows=b.projects.flatMap(p=>p.rows), n=rows.length;
+      list.push({k:BKEY(b.name),label:b.name,cls:"brand",meta:`Brand · ${b.projects.length} projects · ${n} deliverables`,pc:n?Math.round(rows.reduce((a,r)=>a+r.pct,0)/n*100)+"%":""});
+      list.push(...items); }
   });
   SUG=list; SUGI=list.length?0:-1;
-  $("sug").innerHTML = `<li class="hd" role="presentation">${q?"SUGGESTIONS":"SAVED PROJECTS"}</li>`+
-    (list.length? list.map((o,i)=>`<li role="option" id="opt${i}" data-i="${i}" aria-selected="${i===SUGI}"><span class="nm">${hl(o.label,q)}</span><span class="pc">${o.pc}</span><span class="mt">${esc(o.meta)}</span></li>`).join("")
-      : `<li class="empty" role="presentation">No project matches "${esc(q)}"</li>`);
+  $("sug").innerHTML = `<li class="hd" role="presentation">${q?"SUGGESTIONS":"BRANDS & PROJECTS"}</li>`+
+    (list.length? list.map((o,i)=>`<li role="option" class="${o.cls||""}" id="opt${i}" data-i="${i}" aria-selected="${i===SUGI}"><span class="nm">${hl(o.label,q)}</span><span class="pc">${o.pc}</span><span class="mt">${esc(o.meta)}</span></li>`).join("")
+      : `<li class="empty" role="presentation">No brand or project matches "${esc(q)}"</li>`);
   $("sug").hidden=false; $("q").setAttribute("aria-expanded","true");
   $("q").setAttribute("aria-activedescendant", SUGI>=0?"opt"+SUGI:"");
   $("sug").querySelectorAll("li[role=option]").forEach(li=>li.onmousedown=e=>{e.preventDefault(); pick(+li.dataset.i);});
@@ -455,16 +484,28 @@ function closeSug(){ $("sug").hidden=true; $("q").setAttribute("aria-expanded","
 function moveSug(d){ if(!SUG.length) return; SUGI=(SUGI+d+SUG.length)%SUG.length;
   $("sug").querySelectorAll("li[role=option]").forEach((li,i)=>li.setAttribute("aria-selected",i===SUGI));
   $("q").setAttribute("aria-activedescendant","opt"+SUGI); document.getElementById("opt"+SUGI)?.scrollIntoView({block:"nearest"}); }
-function pick(i){ const o=SUG[i]; if(!o) return; FILTER=o.k; $("q").value = o.k==="All"?"All Projects":o.label; closeSug(); $("q").blur(); render(); }
+function pick(i){ const o=SUG[i]; if(!o) return; FILTER=o.k; $("q").value = scopeLabel(); closeSug(); $("q").blur(); render(); }
 function renderTabs(){
   $("qclear").hidden = !$("q").value;
-  const lbl = FILTER==="All"?"All Projects":FILTER;
+  const lbl = scopeLabel();
   if(document.activeElement!==$("q")) $("q").value = lbl;
-  $("scur").innerHTML = FILTER==="All"? `Showing <b>all ${PROJECTS.length} projects together</b> · search to open one project` : `Showing <b>${esc(FILTER)}</b> · ${PROJECTS.length} projects saved, search to switch`;
+  const nb = brandsList().length;
+  $("scur").innerHTML = FILTER==="All"? `Showing <b>all ${PROJECTS.length} projects together</b> · ${nb} brands · search to open a brand or project`
+    : isBrandKey(FILTER)? `Showing brand <b>${esc(lbl)}</b> · ${scopeProjects().length} projects together · pick one below to open it`
+    : `Showing <b>${esc(FILTER)}</b>${scopeBrand() && scopeBrand()!==FILTER?` · brand ${esc(scopeBrand())}`:""} · search to switch`;
+  // brand chips: shown for a brand with more than one project
+  const br = FILTER==="All" ? null : scopeBrand(), bp = br ? brandProjects(br) : [];
+  const bc = $("bchips");
+  if(bp.length>1){
+    bc.hidden=false;
+    bc.innerHTML = `<button type="button" class="${isBrandKey(FILTER)?"on":""}" data-k="${esc(BKEY(br))}">All ${esc(br)} · ${bp.length}</button>`+
+      bp.map(p=>`<button type="button" class="${FILTER===p.name?"on":""}" data-k="${esc(p.name)}">${esc(p.name)}</button>`).join("");
+    bc.querySelectorAll("button").forEach(b=>b.onclick=()=>{ FILTER=b.dataset.k; render(); });
+  } else { bc.hidden=true; bc.innerHTML=""; }
 }
 $("q").addEventListener("focus",()=>{ $("q").select(); openSug(true); });
 $("q").addEventListener("input",()=>{openSug(); $("qclear").hidden=false;});
-$("q").addEventListener("blur",()=>setTimeout(()=>{closeSug(); if(!$("q").value.trim()){ $("q").value=FILTER==="All"?"All Projects":FILTER; $("qclear").hidden=false; }},120));
+$("q").addEventListener("blur",()=>setTimeout(()=>{closeSug(); if(!$("q").value.trim()){ $("q").value=scopeLabel(); $("qclear").hidden=false; }},120));
 $("q").addEventListener("keydown",e=>{
   if(e.key==="ArrowDown"){e.preventDefault(); if($("sug").hidden) openSug(true); else moveSug(1);}
   else if(e.key==="ArrowUp"){e.preventDefault(); moveSug(-1);}
@@ -485,11 +526,12 @@ function renderProjects(){
 
 function render(){
   renderTabs();
-  const all = FILTER==="All";
-  const rows = all? PROJECTS.flatMap(p=>p.rows) : (PROJECTS.find(p=>p.name===FILTER)?.rows||[]);
+  const SP = scopeProjects();
+  const all = FILTER==="All" || SP.length>1;      // more than one project on screen
+  const rows = SP.flatMap(p=>p.rows);
   const N = rows.length || 1;
-  $("h1").innerHTML = all? `Brikkin <span>Command Deck</span>` : `${esc(FILTER)} <span>Command Deck</span>`;
-  $("asof").textContent = `${all?PROJECTS.length+" projects · ":""}${rows.length} deliverables · as of ${fmtDate(TODAY)}`;
+  $("h1").innerHTML = FILTER==="All"? `Brikkin <span>Command Deck</span>` : `${esc(scopeLabel())} <span>Command Deck</span>`;
+  $("asof").textContent = `${all?SP.length+" projects · ":""}${rows.length} deliverables · as of ${fmtDate(TODAY)}`;
 
   const delivered = rows.filter(r=>r.st[5]==="d").length;
   const wip = rows.filter(r=>/wip/i.test(r.bucket||"")).length;
@@ -499,7 +541,7 @@ function render(){
   const overall = rows.length? rows.reduce((a,r)=>a+r.pct,0)/rows.length : 0;
   const pay = PAY ? computePayments(all) : null;
   const k = [
-    ["Total Deliverables", rows.length, all? `across ${PROJECTS.length} projects` : "", 1],
+    ["Total Deliverables", rows.length, all? `across ${SP.length} projects` : "", 1],
     ["Delivered / Approved", delivered, `${Math.round(delivered/N*100)}% of total`, delivered/N],
     ["Work in Progress", wip, "content bucket = WIP", wip/N, wip?"warn":""],
     ["Shoots Done", shootsDone, shootApp.length-shootsDone? `${shootApp.length-shootsDone} still to shoot` : (shootApp.length? "all shoots done":"no shoots needed"), shootApp.length? shootsDone/shootApp.length : 1],
@@ -594,7 +636,7 @@ function render(){
 
   // checks
   const lab = r => (all?r.project.split(" ")[0]+": ":"")+r.short;
-  const missingFb = (all?PROJECTS:PROJECTS.filter(p=>p.name===FILTER)).filter(p=>!p.hasFeedback);
+  const missingFb = SP.filter(p=>!p.hasFeedback);
   const checks = [
     ["Shoot marked Done but date is in the future (day/month swapped?)", rows.filter(r=>r.sd && r.sd>TODAY && r.st[3]==="d").map(lab)],
     ["Shoot dates typed as text, not real dates", rows.filter(r=>r.sdText).map(lab)],
@@ -623,7 +665,8 @@ function stageIndex(name){
 // Milestone is earned when every applicable deliverable of the project has finished its linked stage.
 // Manual milestones (no linked stage) count as earned once they are marked received.
 function computePayments(all){
-  const list = (PAY||[]).filter(p=>all || p.project===FILTER);
+  const names = new Set(scopeProjects().map(p=>p.name));
+  const list = (PAY||[]).filter(p=>names.has(p.project));
   const ms=[]; const per=[];
   list.forEach(p=>{
     const proj = PROJECTS.find(x=>x.name===p.project); const rows = proj? proj.rows : [];
@@ -650,7 +693,7 @@ function renderPayments(pay, all){
   panel.hidden=false;
   const P = x => Math.round(x*100)+"%";
   if(!pay.ms.length){
-    $("paybody").innerHTML = `<p class="note" style="margin-top:0">No payment milestones for ${all?"any project":esc(FILTER)} yet. In Edit Data, fill the project's columns Payment Milestone, Linked Stage, Payment %, Payment Received and Received Date.</p>`;
+    $("paybody").innerHTML = `<p class="note" style="margin-top:0">No payment milestones for ${FILTER==="All"?"any project":esc(scopeLabel())} yet. In Edit Data, fill the project's columns Payment Milestone, Linked Stage, Payment %, Payment Received and Received Date.</p>`;
     return;
   }
   const lab={rec:"Received",due:"Due · bill client",prog:"In progress"};
@@ -705,8 +748,9 @@ function tlPill(t){
 }
 function renderTimeline(all){
   const svg=$("tlsvg"), head=$("tlhead");
-  const projs = all? PROJECTS : PROJECTS.filter(p=>p.name===FILTER);
+  const projs = scopeProjects();
   const tls = projs.map(p=>({p, t:projectTimeline(p)})).filter(x=>x.t.stages.length);
+  all = tls.length>1;
   const fmtS=d=>d.toLocaleDateString("en-GB",{day:"2-digit",month:"short"});
   if(!tls.length){
     head.innerHTML = `<span class="tpill none">NO TIMELINE</span><span>Add dates in the project tab: columns <b>Timeline Stage</b>, <b>Planned Date</b> and <b>Completed Date</b>.</span>`;
@@ -770,9 +814,10 @@ function renderTimeline(all){
   }
 }
 function load(projects,pay,srcLabel){
-  PROJECTS = projects.map(p=>({name:p.name,hasFeedback:p.hasFeedback,rows:enrichProject(p),timeline:p.timeline||[]}));
+  PROJECTS = projects.map(p=>({name:p.name,brand:String(p.brand||p.name).trim()||p.name,hasFeedback:p.hasFeedback,rows:enrichProject(p),timeline:p.timeline||[]}));
   PAY = Array.isArray(pay) ? pay : null;
-  if(FILTER!=="All" && !PROJECTS.some(p=>p.name===FILTER)) FILTER=PROJECTS[0]?.name;
+  if(isBrandKey(FILTER)){ if(!brandProjects(FILTER.slice(2)).length) FILTER=null; }
+  if(FILTER!=="All" && !isBrandKey(FILTER) && !PROJECTS.some(p=>p.name===FILTER)) FILTER=PROJECTS[0]?.name;
   if(srcLabel) $("src").innerHTML = "Showing: <b>"+esc(srcLabel)+"</b>";
   render();
 }
@@ -1245,6 +1290,7 @@ function gridInstall(){
       <button class="btn ghost" type="button" id="gcols">Columns</button>
       <button class="btn ghost" type="button" id="gnew">+ New project</button>
       <button class="btn ghost" type="button" id="gren">Rename</button>
+      <button class="btn ghost" type="button" id="gbrand">Brand</button>
       <button class="btn ghost" type="button" id="gpdel">Delete project</button>
       <button class="btn ghost" type="button" id="gxls">Export Excel</button>
       <button class="btn ghost" type="button" id="greload">Reload</button>
@@ -1257,7 +1303,7 @@ function gridInstall(){
   $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
   $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
   $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg;
-  $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel;
+  $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gbrand").onclick=gridBrandDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel;
   const w=$("gwrap");
   w.addEventListener("mousedown",e=>{ if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td) return; gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c); });
   w.addEventListener("dblclick",e=>{ const td=e.target.closest("td[data-c]"); if(td) gridEdit(); });
@@ -1269,13 +1315,15 @@ function gridInstall(){
     const x=document.createElement("button"); x.className="btn ghost"; x.id="gxopen"; x.type="button"; x.textContent="Export Excel"; x.hidden=true; x.onclick=exportExcel; tb.parentNode.insertBefore(x,tb); }
 }
 function gridShowButton(){ gridInstall(); $("gopen").hidden=!gridCanEdit(); if($("gxopen")) $("gxopen").hidden=!isAdmin();
-  ["gdel","gcols","gpdel"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); }); }
+  ["gdel","gcols","gpdel","gbrand"].forEach(id=>{ if($(id)) $(id).hidden=!isSuper(); }); }
 
 async function gridOpen(){
   gridInstall(); $("gridview").hidden=false; document.body.style.overflow="hidden";
   gStatus("Loading tabs…","saving");
   try{ const j=await api("gridTabs"); if(!j.ok) return gStatus(j.error,"err");
-    GRID.tabs=j.tabs; const want = (FILTER && FILTER!=="All" && j.tabs.includes(FILTER)) ? FILTER : j.tabs[0];
+    GRID.tabs=j.tabs; GRID.brands=(j.brands&&!Array.isArray(j.brands))?j.brands:{};
+    const fromBrand = isBrandKey(FILTER) ? j.tabs.find(t=>GRID.brands[t]===FILTER.slice(2)) : null;
+    const want = fromBrand || ((FILTER && FILTER!=="All" && j.tabs.includes(FILTER)) ? FILTER : j.tabs[0]);
     if(!want){ GRID.tab=null; GRID.data=null; gridTabsRender(null); $("gtable").innerHTML=""; gStatus("No projects yet. Press + New project.","ok"); return; }
     gridTabsRender(want); await gridLoad(want);
   }catch(err){ gStatus(err.message,"err"); }
@@ -1286,7 +1334,7 @@ async function gridClose(){
   if(GRID.dirty){ GRID.dirty=false; try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); }catch(e){} }
 }
 function gridTabsRender(on){
-  $("gtabs").innerHTML=GRID.tabs.map(t=>`<button type="button" role="tab" aria-selected="${t===on}" class="${t===on?"on":""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  $("gtabs").innerHTML=GRID.tabs.map(t=>`<button type="button" role="tab" aria-selected="${t===on}" class="${t===on?"on":""}" data-t="${esc(t)}" title="Brand: ${esc((GRID.brands||{})[t]||t)}">${esc(t)}</button>`).join("");
   $("gtabs").querySelectorAll("button").forEach(b=>b.onclick=async()=>{ gridCommit(); await gridFlush(); gridTabsRender(b.dataset.t); gridLoad(b.dataset.t); });
 }
 async function gridLoad(tab){
@@ -1433,15 +1481,29 @@ async function gridNewProjectDlg(){
   const opts=`<option value="">Standard Command Deck columns</option>`+(GRID.tabs||[]).map(t=>`<option${t===GRID.tab?" selected":""}>${esc(t)}</option>`).join("");
   const r=await gConfirm("New project","A new project is made with the same columns and dropdowns as the one you copy. Its rows start empty.",
     `<div class="fld"><label for="gnname">Project name</label><input id="gnname" type="text" maxlength="80"></div>
+     <div class="fld"><label for="gnbrand">Brand (leave empty = same as project name)</label><input id="gnbrand" type="text" maxlength="80" list="gbrandlist" value="${esc(isBrandKey(FILTER)?FILTER.slice(2):"")}"><datalist id="gbrandlist">${brandOptions()}</datalist></div>
      <div class="fld"><label for="gnfrom">Copy columns from</label><select id="gnfrom">${opts}</select></div>`);
   if(!r || !r.name.trim()) return;
   await gridFlush(); gStatus("Creating project…","saving");
-  try{ const j=await api("gridNewProject",{name:r.name.trim(), copyFrom:r.from});
-    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
+  try{ const j=await api("gridNewProject",{name:r.name.trim(), copyFrom:r.from, brand:(r.gnbrand||"").trim()});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; if(j.brands&&!Array.isArray(j.brands)) GRID.brands=j.brands; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
   }catch(err){ gStatus(err.message,"err"); }
 }
 function gStatus(t,cls){ const s=$("gstatus"); if(s){ s.textContent=t; s.className=cls||""; } }
-// ---- project tools: columns, rename, delete
+// ---- project tools: brand, columns, rename, delete
+function brandOptions(){ const s=new Set([...Object.values(GRID.brands||{}), ...PROJECTS.map(p=>p.brand)]); return [...s].sort((a,b)=>a.localeCompare(b)).map(b=>`<option value="${esc(b)}"></option>`).join(""); }
+async function gridBrandDlg(){
+  if(!GRID.tab) return gStatus("Choose a project first.","err");
+  const cur=(GRID.brands||{})[GRID.tab]||GRID.tab;
+  const r=await gConfirm(`Brand of “${GRID.tab}”`,"Projects with the same brand are shown together on the dashboard. Pick an existing brand or type a new one. Leave empty to use the project name.",
+    `<div class="fld"><label for="gbname">Brand</label><input id="gbname" type="text" maxlength="80" list="gbrandlist2" value="${esc(cur)}"><datalist id="gbrandlist2">${brandOptions()}</datalist></div>`);
+  if(!r) return;
+  gridCommit(); await gridFlush();
+  try{ const j=await api("projectSetBrand",{tab:GRID.tab, brand:(r.gbname||"").trim()});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.brands=(j.brands&&!Array.isArray(j.brands))?j.brands:{}; GRID.dirty=true;
+    gridTabsRender(GRID.tab); gStatus(`Brand set to ${GRID.brands[GRID.tab]}`,"ok");
+  }catch(err){ gStatus(err.message,"err"); }
+}
 async function gridColumnsDlg(){
   if(!GRID.tab) return gStatus("Choose a project first.","err");
   gridCommit(); await gridFlush();
@@ -1493,7 +1555,7 @@ async function gridRenameDlg(){
   if(!r || !r.name.trim() || r.name.trim()===GRID.tab) return;
   gridCommit(); await gridFlush();
   try{ const j=await api("projectRename",{tab:GRID.tab, name:r.name.trim()});
-    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
+    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; if(j.brands&&!Array.isArray(j.brands)) GRID.brands=j.brands; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
   }catch(err){ gStatus(err.message,"err"); }
 }
 async function gridDeleteProjectDlg(){
