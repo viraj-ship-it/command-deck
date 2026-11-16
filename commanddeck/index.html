@@ -1394,6 +1394,19 @@ function gridInstall(){
 #gstatus{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:120px;text-align:right}
 #gstatus.saving{color:var(--amber)}#gstatus.ok{color:var(--neon)}#gstatus.err{color:var(--red)}
 #gtabs{display:flex;gap:6px;overflow-x:auto;padding:8px 20px;border-bottom:1px solid var(--line);background:#050b08}
+.gfilt{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 20px 2px;background:#050b08}
+.gfilt .bsel{flex:0 1 260px;min-width:190px}
+.gfilt #gbbtn{flex:1;min-width:0;display:flex;align-items:center;gap:8px;background:transparent;border:0;outline:0;color:var(--ink);font:500 13px var(--body);padding:9px 0;cursor:pointer;text-align:left}
+.gfilt #gbbtn .bt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gfilt #gbbtn .cv{flex:none;width:7px;height:7px;border-right:2px solid var(--green);border-bottom:2px solid var(--green);transform:rotate(45deg) translateY(-3px);transition:transform .18s}
+.gfilt .bsel.open #gbbtn .cv{transform:rotate(225deg) translate(-2px,-1px)}
+.gfilt .pq{flex:0 1 300px;min-width:180px;display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line2);border-radius:8px;padding:0 10px}
+.gfilt .pq:focus-within{border-color:var(--neon);box-shadow:0 0 14px rgba(61,255,143,.25)}
+.gfilt .pq input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--ink);font:500 13px var(--body);padding:9px 0}
+.gfilt .pq button{background:transparent;border:0;color:var(--muted);cursor:pointer;font:500 11px var(--mono)}
+.gfilt .gcnt{font:11px var(--mono);color:var(--muted)}
+.gfilt .gcnt b{color:var(--neon);font-weight:500}
+#gtabs .gnone{font-size:12.5px;color:var(--muted);padding:7px 2px}
 #gtabs button{flex:none;font:500 13px var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:6px 6px 0 0;padding:7px 14px;cursor:pointer;white-space:nowrap}
 #gtabs button.on{color:#04110a;background:var(--neon);border-color:var(--neon);font-weight:600}
 #gwrap{flex:1;overflow:auto;position:relative}
@@ -1435,13 +1448,19 @@ function gridInstall(){
       <button class="btn ghost" type="button" id="greload">Reload</button>
       <span class="sp"></span><span id="gstatus" role="status"></span>
       <button class="btn" type="button" id="gclose">Back to dashboard</button></div>
+    <div class="gfilt">
+      <div class="bsel" id="gbsel"><span class="bl">BRAND</span><button type="button" id="gbbtn" aria-haspopup="listbox" aria-expanded="false"><span class="bt" id="gbtxt">All brands</span><span class="cv" aria-hidden="true"></span></button>
+        <div class="bpanel" id="gbpanel" hidden><div class="bfind"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="gbfind" type="text" placeholder="Find a brand" aria-label="Find a brand" autocomplete="off"></div><ul id="gblist" role="listbox" aria-label="Brands"></ul></div></div>
+      <div class="pq"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input id="gpq" type="text" placeholder="Find a project" aria-label="Find a project" autocomplete="off"><button type="button" id="gpqx" hidden>Clear</button></div>
+      <span class="gcnt" id="gcnt"></span>
+    </div>
     <div id="gtabs" role="tablist" aria-label="Project tabs"></div>
     <div id="gwrap" tabindex="0"><table id="gtable"></table></div>
     <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Ctrl+V pastes from Excel/Sheets. Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
   document.body.appendChild(v);
   $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
   $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
-  $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg;
+  $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg; gridFiltersInit();
   $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gbrand").onclick=gridBrandDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel;
   const w=$("gwrap");
   w.addEventListener("mousedown",e=>{ if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td) return; gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c); });
@@ -1463,8 +1482,10 @@ async function gridOpen(){
   try{ const j=await api("gridTabs"); if(!j.ok) return gStatus(j.error,"err");
     GRID.tabs=j.tabs; GRID.brands=(j.brands&&!Array.isArray(j.brands))?j.brands:{};
     const fromBrand = isBrandKey(FILTER) ? j.tabs.find(t=>GRID.brands[t]===FILTER.slice(2)) : null;
-    const want = fromBrand || ((FILTER && FILTER!=="All" && j.tabs.includes(FILTER)) ? FILTER : j.tabs[0]);
+    GRID.fb = isBrandKey(FILTER) ? FILTER.slice(2) : (BRAND||""); GRID.fq=""; $("gpq").value=""; $("gpqx").hidden=true; $("gbtxt").textContent=GRID.fb||"All brands";
+    let want = fromBrand || ((FILTER && FILTER!=="All" && j.tabs.includes(FILTER)) ? FILTER : j.tabs[0]);
     if(!want){ GRID.tab=null; GRID.data=null; gridTabsRender(null); $("gtable").innerHTML=""; gStatus("No projects yet. Press + New project.","ok"); return; }
+    const sh=gridShownTabs(); if(!sh.includes(want)) want = sh[0] || want;
     gridTabsRender(want); await gridLoad(want);
   }catch(err){ gStatus(err.message,"err"); }
 }
@@ -1473,8 +1494,54 @@ async function gridClose(){
   $("gridview").hidden=true; document.body.style.overflow="";
   if(GRID.dirty){ GRID.dirty=false; try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); }catch(e){} }
 }
+// ---- Edit Data filters: brand + project
+function gridShownTabs(){
+  const fb=GRID.fb||"", q=(GRID.fq||"").trim().toLowerCase(), br=GRID.brands||{};
+  return (GRID.tabs||[]).filter(t=>(!fb || (br[t]||t)===fb) && (!q || t.toLowerCase().includes(q) || String(br[t]||"").toLowerCase().includes(q)));
+}
+function gridBrandsAll(){ const m=new Map(); (GRID.tabs||[]).forEach(t=>{ const b=(GRID.brands||{})[t]||t; m.set(b,(m.get(b)||0)+1); }); return [...m].sort((a,b)=>a[0].localeCompare(b[0])); }
+let GBOPTS=[], GBI=0;
+function gbDraw(){
+  const q=$("gbfind").value.trim().toLowerCase(), all=gridBrandsAll();
+  GBOPTS=(q?[]:[["",GRID.tabs.length]]).concat(all.filter(([b])=>!q||b.toLowerCase().includes(q)));
+  if(GBI>=GBOPTS.length) GBI=Math.max(0,GBOPTS.length-1);
+  $("gblist").innerHTML = GBOPTS.length ? GBOPTS.map(([b,n],i)=>{ const sel=(GRID.fb||"")===b, ini=b? b.replace(/[^A-Za-z0-9 ]/g," ").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase() : "★";
+      return `<li class="bo${sel?" sel":""}${i===GBI?" act":""}" role="option" aria-selected="${sel}" data-i="${i}"><span class="av${b?"":" all"}">${esc(ini)}</span><span class="nm">${esc(b||"All brands")}${sel?'<span class="tick">✓</span>':""}</span><span class="pc" style="color:var(--muted)">${n}</span><span class="mt">${n} project${n>1?"s":""}</span></li>`; }).join("")
+    : `<li class="bempty" role="presentation">No brand matches “${esc(q)}”</li>`;
+  $("gblist").querySelectorAll("li.bo").forEach(li=>{ li.onmousedown=e=>{ e.preventDefault(); gbPick(GBOPTS[+li.dataset.i][0]); }; });
+}
+function gbMark(){ $("gblist").querySelectorAll("li.bo").forEach(li=>li.classList.toggle("act",+li.dataset.i===GBI)); const a=$("gblist").querySelector("li.act"); if(a) a.scrollIntoView({block:"nearest"}); }
+function gbOpen(){ $("gbpanel").hidden=false; $("gbsel").classList.add("open"); $("gbbtn").setAttribute("aria-expanded","true"); $("gbfind").value=""; gbDraw(); GBI=Math.max(0,GBOPTS.findIndex(o=>o[0]===(GRID.fb||""))); gbMark(); setTimeout(()=>$("gbfind").focus(),0); }
+function gbClose(){ $("gbpanel").hidden=true; $("gbsel").classList.remove("open"); $("gbbtn").setAttribute("aria-expanded","false"); }
+async function gbPick(b){ GRID.fb=b||""; gbClose(); await gridFilterApply(); }
+async function gridFilterApply(){
+  $("gbtxt").textContent = GRID.fb || "All brands";
+  $("gpqx").hidden = !GRID.fq;
+  const shown=gridShownTabs();
+  if(shown.length && !shown.includes(GRID.tab)){ gridCommit(); await gridFlush(); gridTabsRender(shown[0]); gridLoad(shown[0]); }
+  else gridTabsRender(GRID.tab);
+}
+function gridFiltersInit(){
+  $("gbbtn").addEventListener("click",e=>{ e.stopPropagation(); $("gbpanel").hidden ? gbOpen() : gbClose(); });
+  $("gbfind").addEventListener("input",()=>{ GBI=0; gbDraw(); });
+  $("gbfind").addEventListener("keydown",e=>{
+    if(e.key==="ArrowDown"){ e.preventDefault(); if(GBOPTS.length){ GBI=(GBI+1)%GBOPTS.length; gbMark(); } }
+    else if(e.key==="ArrowUp"){ e.preventDefault(); if(GBOPTS.length){ GBI=(GBI-1+GBOPTS.length)%GBOPTS.length; gbMark(); } }
+    else if(e.key==="Enter"){ e.preventDefault(); if(GBOPTS[GBI]) gbPick(GBOPTS[GBI][0]); }
+    else if(e.key==="Escape"){ e.preventDefault(); e.stopPropagation(); gbClose(); $("gbbtn").focus(); }
+    e.stopPropagation();
+  });
+  document.addEventListener("mousedown",e=>{ if(!$("gbpanel").hidden && !$("gbsel").contains(e.target)) gbClose(); });
+  let t=null;
+  $("gpq").addEventListener("input",()=>{ GRID.fq=$("gpq").value; $("gpqx").hidden=!GRID.fq; clearTimeout(t); t=setTimeout(gridFilterApply,250); });
+  $("gpq").addEventListener("keydown",e=>{ e.stopPropagation(); if(e.key==="Enter"){ clearTimeout(t); gridFilterApply(); } if(e.key==="Escape"){ $("gpq").value=""; GRID.fq=""; gridFilterApply(); } });
+  $("gpqx").onclick=()=>{ $("gpq").value=""; GRID.fq=""; gridFilterApply(); $("gpq").focus(); };
+}
 function gridTabsRender(on){
-  $("gtabs").innerHTML=GRID.tabs.map(t=>`<button type="button" role="tab" aria-selected="${t===on}" class="${t===on?"on":""}" data-t="${esc(t)}" title="Brand: ${esc((GRID.brands||{})[t]||t)}">${esc(t)}</button>`).join("");
+  const shown=gridShownTabs(), total=(GRID.tabs||[]).length;
+  $("gcnt").innerHTML = (GRID.fb||GRID.fq) ? `<b>${shown.length}</b> of ${total} projects` : `${total} projects`;
+  if(!shown.length){ $("gtabs").innerHTML=`<span class="gnone">No project matches this filter.</span>`; return; }
+  $("gtabs").innerHTML=shown.map(t=>`<button type="button" role="tab" aria-selected="${t===on}" class="${t===on?"on":""}" data-t="${esc(t)}" title="Brand: ${esc((GRID.brands||{})[t]||t)}">${esc(t)}</button>`).join("");
   $("gtabs").querySelectorAll("button").forEach(b=>b.onclick=async()=>{ gridCommit(); await gridFlush(); gridTabsRender(b.dataset.t); gridLoad(b.dataset.t); });
 }
 async function gridLoad(tab){
