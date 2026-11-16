@@ -336,10 +336,10 @@ function rows_of(int $pid): array {
   return array_map(function ($r) { $r['data'] = json_decode((string)$r['data'], true) ?: []; return $r; },
                    q('SELECT * FROM cd_rows WHERE project_id = ? ORDER BY position, id', [$pid])->fetchAll());
 }
-function grid_cols(int $pid, array $me): array {   // admins do not see payment columns
+function grid_cols(int $pid, array $me): array {   // Admins see every column. Users: no payment or timeline columns.
   $cols = cols_of($pid);
-  if (is_super($me)) return $cols;
-  $hide = array_map('strtolower', array_values(PAY_COLUMNS));
+  if (is_admin($me)) return $cols;
+  $hide = array_map('strtolower', array_merge(array_values(PAY_COLUMNS), array_values(TL_COLUMNS)));
   return array_values(array_filter($cols, function ($c) use ($hide) { return !in_array(strtolower(trim($c['name'])), $hide, true); }));
 }
 function cell(array $row, array $col): string { return (string)($row['data'][(string)$col['id']] ?? ''); }
@@ -378,7 +378,7 @@ function with_data(array $out, array $user): array {
   }
   $out['projects'] = $projects;
   $out['prompts'] = prompts_for($user['email']);
-  if (is_super($user)) $out['payments'] = $payments;   // payments only go to the Super Admin
+  if (is_admin($user)) $out['payments'] = $payments;   // payments go to Admins and the Super Admin, never to Users
   $out['sheetName'] = 'Command Deck database';
   $out['updatedAt'] = date('c');
   return $out;
