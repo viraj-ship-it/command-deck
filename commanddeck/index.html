@@ -320,7 +320,7 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
     <div class="panel s5" id="checkspanel" hidden>
       <div class="ph"><h2>Data Checks</h2><span class="hint">should all be 0</span></div>
       <ul class="list" id="checks"></ul>
-      <p class="note">Fix these in the project tabs of the Google Sheet, then press Refresh data. Where a tab has no Feedback column, Client OK counts as done once the Live Link is posted.</p>
+      <p class="note">Fix these in Edit Data, then press Refresh data. Where a tab has no Feedback column, Client OK counts as done once the Live Link is posted.</p>
     </div>
     <div class="panel s12" id="pwpanel" hidden>
       <div class="ph"><h2>Change Password</h2></div>
@@ -342,7 +342,7 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
       </form>
       <div class="msg" id="umsg" role="status"></div>
       <div class="scroll"><table class="utable" id="utable"></table></div>
-      <p class="note">Users are saved in the hidden _Users tab of your Google Sheet, with passwords stored as hashes. Share each new user's email ID and password with them directly. Users see all projects; admins also manage users.</p>
+      <p class="note">Users are saved in the Command Deck database, with passwords stored as secure hashes. Share each new user's email ID and password with them directly. Users see all projects; admins also manage users.</p>
     </div>
     <div class="panel s12" id="logpanel" hidden>
       <div class="ph"><h2>Login History</h2><span class="role admin">ADMIN ONLY</span></div>
@@ -352,7 +352,7 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
         <div class="msg" id="logmsg" style="margin:0;align-self:center"></div>
       </div>
       <div class="scroll" style="max-height:420px;overflow-y:auto"><table class="utable" id="logtable"></table></div>
-      <p class="note">Every sign-in attempt is saved in the hidden _LoginLog tab of the Google Sheet (latest 2,000 kept).</p>
+      <p class="note">Every sign-in attempt is saved in the Command Deck database (latest 2,000 kept).</p>
     </div>
   </div>
 </div>
@@ -650,7 +650,7 @@ function renderPayments(pay, all){
   panel.hidden=false;
   const P = x => Math.round(x*100)+"%";
   if(!pay.ms.length){
-    $("paybody").innerHTML = `<p class="note" style="margin-top:0">No payment milestones for ${all?"any project":esc(FILTER)} yet. In the project tab of the Google Sheet, fill the columns Payment Milestone, Linked Stage, Payment %, Payment Received and Received Date.</p>`;
+    $("paybody").innerHTML = `<p class="note" style="margin-top:0">No payment milestones for ${all?"any project":esc(FILTER)} yet. In Edit Data, fill the project's columns Payment Milestone, Linked Stage, Payment %, Payment Received and Received Date.</p>`;
     return;
   }
   const lab={rec:"Received",due:"Due · bill client",prog:"In progress"};
@@ -777,9 +777,9 @@ function load(projects,pay,srcLabel){
   render();
 }
 
-// ===== Paste your Apps Script Web App URL here (ends with /exec) =====
-const API_URL = "https://script.google.com/macros/s/AKfycbxSmQkGeCEvQ5bBrf51d0JdvYOvnMA-tt5pLgRHBjGHqRFyGYPFXoLaTRBoa1Dc4gjR-A/exec";
-// ======================================================================
+// ===== The dashboard talks to its own PHP + MySQL API (folder "api" next to this file) =====
+const API_URL = "api/index.php";
+// ==========================================================================================
 
 const TOKEN_KEY = "brikkin_console_token";
 const store = (()=>{ try{ return window.sessionStorage; }catch(e){ return null; } })();
@@ -788,12 +788,11 @@ const setTok = v => { try{ if(!store) return; v ? store.setItem(TOKEN_KEY,v) : s
 let TOKEN = null, ME = null, USERS = [];
 
 async function api(action, payload){
-  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(API_URL)) throw new Error("The dashboard is not connected yet. Paste the Apps Script URL into API_URL in index.html.");
   let res;
   try{
     res = await fetch(API_URL, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(Object.assign({action, token: TOKEN}, payload||{}))});
   }catch(e){ throw new Error("Could not reach the server. Check your internet connection and try again."); }
-  let j; try{ j = await res.json(); }catch(e){ throw new Error("The server returned an unexpected reply. Check the Apps Script deployment."); }
+  let j; try{ j = await res.json(); }catch(e){ throw new Error("The server returned an unexpected reply. Check that the api folder is uploaded and install.php has been run."); }
   if(!j.ok && j.expired){ signOut(j.error); throw new Error(j.error); }
   return j;
 }
@@ -801,7 +800,7 @@ async function api(action, payload){
 function gateShow(msg){ $("gate").hidden=false; $("app").hidden=true; const m=$("lmsg"); m.className="msg err"; m.textContent=msg||""; }
 function showData(j){
   const when = j.updatedAt ? new Date(j.updatedAt).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
-  load(j.projects||[], j.payments||null, `Google Sheet${j.sheetName?" · "+j.sheetName:""} · loaded ${when}`);
+  load(j.projects||[], j.payments||null, `Command Deck database · loaded ${when}`);
 }
 function enterApp(j){
   ME = j.user;
@@ -813,11 +812,13 @@ function enterApp(j){
   showData(j);
   $("logpanel").hidden = ME.role!=="admin";
   if(ME.role==="admin"){ loadUsers(); loadLog(); loadPrompts(); }
+  gridShowButton();
   maybeStartTour();
   startVira(j.prompts);
 }
 function signOut(msg){
   endTour(true);
+  if($("gridview")){ $("gridview").hidden=true; document.body.style.overflow=""; }
   stopVira();
   if(TOKEN) api("logout").catch(()=>{});
   TOKEN=null; ME=null; setTok(null);
@@ -1010,12 +1011,12 @@ function tourSteps(){
     {el:()=>panelOf("tbl"), title:"The detailed tracker", text:"Each row is one video. Filled green chips are done, amber outlines are pending, faint ones don't apply. The last column says what is pending next."}
   ];
   if(admin){
-    s.push({el:()=>visible($("paypanel"))?$("paypanel"):null, title:"Payments (admins only)", text:"Payment milestones are linked to production stages. When a stage is done the milestone is <b>earned</b>; mark it received in the sheet once the client pays."});
-    s.push({el:()=>$("openpanel"), title:"What needs attention", text:"Open Items lists every unfinished video, and Data Checks flags mistakes in the sheet. Both should shrink to zero."});
+    s.push({el:()=>visible($("paypanel"))?$("paypanel"):null, title:"Payments (admins only)", text:"Payment milestones are linked to production stages. When a stage is done the milestone is <b>earned</b>; mark it received in Edit Data once the client pays."});
+    s.push({el:()=>$("openpanel"), title:"What needs attention", text:"Open Items lists every unfinished video, and Data Checks flags mistakes in the data. Both should shrink to zero."});
     s.push({el:()=>$("userspanel"), title:"Manage the team", text:"Add people, set them as User or Admin, reset passwords or remove access here."});
     s.push({el:()=>$("logpanel"), title:"Who signed in", text:"Every sign-in attempt with date and time, including failed ones."});
   }
-  s.push({el:()=>$("refresh").closest(".actions"), title:"Stay up to date", text:"The data comes live from the Google Sheet. Press <b>Refresh data</b> after the team updates it. You can also change your password or sign out here."});
+  s.push({el:()=>$("refresh").closest(".actions"), title:"Stay up to date", text:"The data comes live from the Command Deck database. Press <b>Refresh data</b> after the team updates it. You can also change your password or sign out here."});
   s.push({el:()=>$("tourbtn"), mood:"wink", title:"That's it!", text:"Tap me here any time to replay this tour. Happy tracking!"});
   return s.filter(x=>!x.el || x.el());
 }
@@ -1142,7 +1143,7 @@ function buildPromptPanel(){
       </div></div>
     <div class="msg" id="vmmsgbox" role="status"></div>
     <div class="scroll"><table class="utable" id="vmtable"></table></div>
-    <p class="note">Messages are saved in the _VIRA tab of the Google Sheet. Each person sees their own messages (and ALL messages) on the days chosen, when they open the dashboard.</p>`;
+    <p class="note">Messages are saved in the Command Deck database. Each person sees their own messages (and ALL messages) on the days chosen, when they open the dashboard.</p>`;
   host.parentNode.insertBefore(p, host.nextSibling);
   $("vmdaily").addEventListener("change", e=>{ if(e.target.checked) document.querySelectorAll(".vmday").forEach(c=>c.checked=false); });
   document.querySelectorAll(".vmday").forEach(c=>c.addEventListener("change", ()=>{ if(c.checked) $("vmdaily").checked=false; }));
@@ -1189,6 +1190,356 @@ async function loadPrompts(){
   try{ const j=await api("listPrompts"); if(j.ok){ vmFillWho(); vmRender(j.prompts); } else vmNote(j.error,false); }
   catch(err){ vmNote(err.message,false); }
 }
+
+// ================= Data Entry: edit the data like a spreadsheet =================
+const GRID = { tab:null, data:null, sel:{r:0,c:0}, editing:null, queue:new Map(), timer:null, busy:false, extra:5, dirty:false };
+const gridCanEdit = () => ME && ME.role==="admin";        // later: open this per user
+
+function gridInstall(){
+  if(document.getElementById("gridview")) return;
+  const css=document.createElement("style");
+  css.textContent=`
+#gridview{position:fixed;inset:0;z-index:65;background:var(--bg);display:flex;flex-direction:column}
+#gridview .gbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+#gridview .gbar h2{font-family:var(--display);font-size:18px;margin:0 8px 0 0;letter-spacing:.04em}
+#gridview .gbar h2 span{color:var(--neon)}
+#gridview .gbar .sp{flex:1}
+#gstatus{font-family:var(--mono);font-size:12px;color:var(--muted);min-width:120px;text-align:right}
+#gstatus.saving{color:var(--amber)}#gstatus.ok{color:var(--neon)}#gstatus.err{color:var(--red)}
+#gtabs{display:flex;gap:6px;overflow-x:auto;padding:8px 20px;border-bottom:1px solid var(--line);background:#050b08}
+#gtabs button{flex:none;font:500 13px var(--body);color:var(--muted);background:transparent;border:1px solid var(--line);border-radius:6px 6px 0 0;padding:7px 14px;cursor:pointer;white-space:nowrap}
+#gtabs button.on{color:#04110a;background:var(--neon);border-color:var(--neon);font-weight:600}
+#gwrap{flex:1;overflow:auto;position:relative}
+#gtable{border-collapse:separate;border-spacing:0;font:13px var(--body);min-width:100%}
+#gtable th,#gtable td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;height:30px;max-width:320px}
+#gtable thead th{position:sticky;top:0;z-index:3;background:#0d1f17;color:var(--green);font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;text-align:left;white-space:nowrap}
+#gtable .rn{position:sticky;left:0;z-index:2;background:#0a1712;color:var(--muted);font:11px var(--mono);text-align:center;min-width:46px;width:46px}
+#gtable thead .rn{z-index:4}
+#gtable td .v{display:block;padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:110px;color:var(--ink);cursor:cell}
+#gtable td.k2 .v{min-width:240px}
+#gtable td.k2{position:sticky;left:46px;z-index:1;background:var(--bg)}
+#gtable thead th.k2{left:46px;z-index:4}
+#gtable td.ro .v{color:var(--muted);cursor:not-allowed;font-style:italic}
+#gtable td.dd .v::after{content:"▾";float:right;color:var(--muted);margin-left:6px}
+#gtable td.sel{outline:2px solid var(--neon);outline-offset:-2px;background:rgba(61,255,143,.07)}
+#gtable td.pend .v{background:rgba(255,191,71,.12)}
+#gtable td.conf .v{background:rgba(255,97,97,.18)}
+#gtable td input,#gtable td select{width:100%;min-width:110px;height:30px;box-sizing:border-box;border:0;outline:2px solid var(--neon);background:#04110a;color:#fff;font:13px var(--body);padding:0 8px}
+#gtable tr:hover td .v{background:rgba(61,255,143,.03)}
+.ghint{font-size:12px;color:var(--muted);padding:8px 20px;border-top:1px solid var(--line);background:var(--panel)}
+.gdlg{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.gdlg .box{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:20px;width:min(420px,100%)}
+.gdlg h3{margin:0 0 12px;font-family:var(--display)}
+.gdlg .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.gdlg input[type=text],.gdlg select{background:#04110a;color:var(--ink);border:1px solid var(--line2);border-radius:6px;padding:7px 9px;font:13px var(--body);box-sizing:border-box}
+.gdlg input[type=text]:focus,.gdlg select:focus{outline:2px solid var(--neon);outline-offset:-1px}
+#gridview .gbar .btn{padding:8px 12px;font-size:12px}`;
+  document.head.appendChild(css);
+  const v=document.createElement("section"); v.id="gridview"; v.hidden=true;
+  v.innerHTML=`<div class="gbar"><h2>Data <span>Entry</span></h2>
+      <button class="btn ghost" type="button" id="gadd">+ Add rows</button>
+      <button class="btn ghost" type="button" id="gdel">Delete row</button>
+      <button class="btn ghost" type="button" id="gcols">Columns</button>
+      <button class="btn ghost" type="button" id="gnew">+ New project</button>
+      <button class="btn ghost" type="button" id="gren">Rename</button>
+      <button class="btn ghost" type="button" id="gpdel">Delete project</button>
+      <button class="btn ghost" type="button" id="gxls">Export Excel</button>
+      <button class="btn ghost" type="button" id="greload">Reload</button>
+      <span class="sp"></span><span id="gstatus" role="status"></span>
+      <button class="btn" type="button" id="gclose">Back to dashboard</button></div>
+    <div id="gtabs" role="tablist" aria-label="Project tabs"></div>
+    <div id="gwrap" tabindex="0"><table id="gtable"></table></div>
+    <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Ctrl+V pastes from Excel/Sheets. Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
+  document.body.appendChild(v);
+  $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
+  $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
+  $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg;
+  $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel;
+  const w=$("gwrap");
+  w.addEventListener("mousedown",e=>{ if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td) return; gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c); });
+  w.addEventListener("dblclick",e=>{ const td=e.target.closest("td[data-c]"); if(td) gridEdit(); });
+  w.addEventListener("keydown",gridKeys);
+  w.addEventListener("paste",gridPaste);
+  window.addEventListener("beforeunload",e=>{ if(GRID.queue.size){ e.preventDefault(); e.returnValue=""; } });
+  // header button
+  const tb=$("tourbtn"); if(tb && !$("gopen")){ const b=document.createElement("button"); b.className="btn"; b.id="gopen"; b.type="button"; b.textContent="Edit Data"; b.hidden=true; b.onclick=gridOpen; tb.parentNode.insertBefore(b,tb);
+    const x=document.createElement("button"); x.className="btn ghost"; x.id="gxopen"; x.type="button"; x.textContent="Export Excel"; x.hidden=true; x.onclick=exportExcel; tb.parentNode.insertBefore(x,tb); }
+}
+function gridShowButton(){ gridInstall(); $("gopen").hidden=!gridCanEdit(); if($("gxopen")) $("gxopen").hidden=!(ME && ME.role==="admin"); }
+
+async function gridOpen(){
+  gridInstall(); $("gridview").hidden=false; document.body.style.overflow="hidden";
+  gStatus("Loading tabs…","saving");
+  try{ const j=await api("gridTabs"); if(!j.ok) return gStatus(j.error,"err");
+    GRID.tabs=j.tabs; const want = (FILTER && FILTER!=="All" && j.tabs.includes(FILTER)) ? FILTER : j.tabs[0];
+    if(!want){ GRID.tab=null; GRID.data=null; gridTabsRender(null); $("gtable").innerHTML=""; gStatus("No projects yet. Press + New project.","ok"); return; }
+    gridTabsRender(want); await gridLoad(want);
+  }catch(err){ gStatus(err.message,"err"); }
+}
+async function gridClose(){
+  gridCommit(); await gridFlush();
+  $("gridview").hidden=true; document.body.style.overflow="";
+  if(GRID.dirty){ GRID.dirty=false; try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); }catch(e){} }
+}
+function gridTabsRender(on){
+  $("gtabs").innerHTML=GRID.tabs.map(t=>`<button type="button" role="tab" aria-selected="${t===on}" class="${t===on?"on":""}" data-t="${esc(t)}">${esc(t)}</button>`).join("");
+  $("gtabs").querySelectorAll("button").forEach(b=>b.onclick=async()=>{ gridCommit(); await gridFlush(); gridTabsRender(b.dataset.t); gridLoad(b.dataset.t); });
+}
+async function gridLoad(tab){
+  gStatus("Loading "+tab+"…","saving"); $("gtable").innerHTML="";
+  try{ const j=await api("gridGet",{tab}); if(!j.ok) return gStatus(j.error,"err");
+    GRID.tab=tab; GRID.data=j; GRID.extra=5; GRID.sel={r:0,c:0};
+    GRID.iso={}; (j.dates||[]).forEach(([i,c,d])=>GRID.iso[i+":"+c]=d);
+    GRID.ro=new Set((j.locked||[]).map(([r,c])=>(r-j.headerRow-1)+":"+(c-1)));
+    gridRender(); gStatus("Ready","ok"); $("gwrap").focus();
+  }catch(err){ gStatus(err.message,"err"); }
+}
+const gridRows=()=> (GRID.data? GRID.data.values.length:0)+GRID.extra;
+const gridCols=()=> GRID.data? GRID.data.headers.length:0;
+const gVal=(i,c)=> (GRID.data.values[i]||[])[c] ?? "";
+const gRO=(i,c)=> !!((GRID.data.formulas||[])[i]&&GRID.data.formulas[i][c]) || GRID.ro.has(i+":"+c);
+const gIsDate=c=> /date/i.test(GRID.data.headers[c]||"");
+const gList=c=> (GRID.data.lists||[])[c];
+const gKeyCol = () => GRID.data.headers.indexOf("Deliverables");
+
+function gridRender(){
+  const d=GRID.data; if(!d) return; const k=gKeyCol();
+  let h=`<thead><tr><th class="rn">#</th>${d.headers.map((x,c)=>`<th class="${c===k?"k2":""}" title="${esc(x)}">${esc(x||"(column "+(c+1)+")")}</th>`).join("")}</tr></thead><tbody>`;
+  for(let i=0;i<gridRows();i++){
+    h+=`<tr><td class="rn">${d.headerRow+1+i}</td>`;
+    for(let c=0;c<d.headers.length;c++){
+      const cls=[c===k?"k2":"", gRO(i,c)?"ro":"", gList(c)&&!gRO(i,c)?"dd":"", GRID.queue.has(i+":"+c)?"pend":""].join(" ");
+      h+=`<td data-r="${i}" data-c="${c}" class="${cls}"><span class="v">${esc(GRID.queue.has(i+":"+c)?GRID.queue.get(i+":"+c).value:gVal(i,c))}</span></td>`;
+    }
+    h+="</tr>";
+  }
+  $("gtable").innerHTML=h+"</tbody>";
+  gridSelect(GRID.sel.r,GRID.sel.c,true);
+}
+const gCell=(i,c)=>$("gtable").querySelector(`td[data-r="${i}"][data-c="${c}"]`);
+function gridSelect(i,c,quiet){
+  i=Math.max(0,Math.min(gridRows()-1,i)); c=Math.max(0,Math.min(gridCols()-1,c));
+  const old=$("gtable").querySelector("td.sel"); if(old) old.classList.remove("sel");
+  GRID.sel={r:i,c}; const td=gCell(i,c); if(td){ td.classList.add("sel"); if(!quiet) td.scrollIntoView({block:"nearest",inline:"nearest"}); }
+}
+function gridScrollTo(i,c){ gridSelect(i,c); }
+function gridEdit(initial){
+  const {r,c}=GRID.sel; if(gRO(r,c)||GRID.editing) return;
+  const td=gCell(r,c); if(!td) return;
+  const cur = GRID.queue.has(r+":"+c) ? GRID.queue.get(r+":"+c).value : gVal(r,c);
+  let el;
+  if(gList(c)){ el=document.createElement("select"); const opts=gList(c).slice(); if(cur && !opts.includes(cur)) opts.unshift(cur);
+    el.innerHTML=`<option value=""></option>`+opts.map(o=>`<option${o===cur?" selected":""}>${esc(o)}</option>`).join("");
+    el.addEventListener("change",()=>{ gridCommit(); $("gwrap").focus(); }); }
+  else if(gIsDate(c) && (initial===undefined)){ el=document.createElement("input"); el.type="date"; el.value=GRID.iso[r+":"+c] || (/^\d{4}-\d{2}-\d{2}$/.test(cur)?cur:""); el.dataset.date="1"; }
+  else { el=document.createElement("input"); el.type="text"; el.value= initial!==undefined ? initial : cur; }
+  td.innerHTML=""; td.appendChild(el); GRID.editing={r,c,el,orig:cur};
+  el.focus(); if(el.type==="text" && initial===undefined) el.select();
+  el.addEventListener("keydown",e=>{
+    if(e.key==="Enter"){ e.preventDefault(); gridCommit(); gridSelect(r+1,c); $("gwrap").focus(); }
+    else if(e.key==="Tab"){ e.preventDefault(); gridCommit(); gridSelect(r,c+(e.shiftKey?-1:1)); $("gwrap").focus(); }
+    else if(e.key==="Escape"){ e.preventDefault(); gridCancel(); }
+    e.stopPropagation();
+  });
+  el.addEventListener("blur",()=>setTimeout(()=>{ if(GRID.editing && GRID.editing.el===el) gridCommit(); },0));
+}
+function gridCancel(){ const e=GRID.editing; if(!e) return; GRID.editing=null; gridPaint(e.r,e.c); $("gwrap").focus(); }
+function gridCommit(){
+  const e=GRID.editing; if(!e) return; GRID.editing=null;
+  let v=e.el.value; if(e.el.dataset.date && v==="" && e.orig) v="";
+  if(v!==e.orig) gridQueue(e.r,e.c,v);
+  gridPaint(e.r,e.c);
+}
+function gridPaint(i,c){
+  const td=gCell(i,c); if(!td) return;
+  const q=GRID.queue.get(i+":"+c);
+  td.innerHTML=`<span class="v">${esc(q? q.value : gVal(i,c))}</span>`;
+  td.classList.toggle("pend",!!q);
+}
+function gridQueue(i,c,value){
+  if(gRO(i,c)) return;
+  const k=i+":"+c, prev=GRID.queue.get(k);
+  GRID.queue.set(k,{i,c,value,old: prev? prev.old : gVal(i,c)});
+  gridPaint(i,c); gStatus(`${GRID.queue.size} unsaved…`,"saving");
+  clearTimeout(GRID.timer); GRID.timer=setTimeout(gridFlush,900);
+}
+async function gridFlush(){
+  clearTimeout(GRID.timer);
+  if(GRID.busy || !GRID.queue.size){ if(GRID.busy) GRID.timer=setTimeout(gridFlush,600); return; }
+  GRID.busy=true;
+  const batch=[...GRID.queue.values()]; GRID.queue.clear();
+  const hr=GRID.data.headerRow, tab=GRID.tab;
+  gStatus("Saving…","saving");
+  try{
+    const j=await api("gridSave",{tab, changes:batch.map(x=>({r:hr+1+x.i, c:x.c+1, old:x.old, value:x.value}))});
+    if(!j.ok){ batch.forEach(x=>{ if(!GRID.queue.has(x.i+":"+x.c)) GRID.queue.set(x.i+":"+x.c,x); }); gStatus(j.error||"Save failed","err"); return; }
+    if(tab!==GRID.tab) return;
+    (j.saved||[]).forEach(s=>{ const i=s.r-hr-1, c=s.c-1; while(GRID.data.values.length<=i) GRID.data.values.push(Array(gridCols()).fill(""));
+      GRID.data.values[i][c]=s.value; if(s.iso) GRID.iso[i+":"+c]=s.iso; else delete GRID.iso[i+":"+c];
+      if(!GRID.queue.has(i+":"+c)) gridPaint(i,c); });
+    (j.conflicts||[]).forEach(x=>{ const i=x.r-hr-1, c=x.c-1; if(GRID.data.values[i]) GRID.data.values[i][c]=x.current; gridPaint(i,c); const td=gCell(i,c); if(td) td.classList.add("conf"); });
+    GRID.dirty=true;
+    gStatus(j.conflicts&&j.conflicts.length? `Saved · ${j.conflicts.length} not saved (changed by someone else, shown in red)` : "All changes saved", j.conflicts&&j.conflicts.length?"err":"ok");
+  }catch(err){
+    batch.forEach(x=>{ if(!GRID.queue.has(x.i+":"+x.c)) GRID.queue.set(x.i+":"+x.c,x); });
+    gStatus("Not saved: "+err.message+" Retrying…","err"); GRID.timer=setTimeout(gridFlush,4000);
+  }finally{ GRID.busy=false; if(GRID.queue.size) GRID.timer=setTimeout(gridFlush,600); }
+}
+function gridKeys(e){
+  if(GRID.editing || !GRID.data) return;
+  const {r,c}=GRID.sel;
+  const mv={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[e.key];
+  if(mv){ e.preventDefault(); gridSelect(r+mv[0],c+mv[1]); return; }
+  if(e.key==="Tab"){ e.preventDefault(); gridSelect(r,c+(e.shiftKey?-1:1)); return; }
+  if(e.key==="Enter"||e.key==="F2"){ e.preventDefault(); gridEdit(); return; }
+  if(e.key==="Delete"||e.key==="Backspace"){ e.preventDefault(); if(!gRO(r,c) && gVal(r,c)!=="") gridQueue(r,c,""); return; }
+  if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey && !gList(c)){ e.preventDefault(); gridEdit(e.key); }
+}
+function gridPaste(e){
+  if(GRID.editing || !GRID.data) return;
+  const t=(e.clipboardData||window.clipboardData).getData("text"); if(!t) return;
+  e.preventDefault();
+  const lines=t.replace(/\r/g,"").replace(/\n$/,"").split("\n").map(l=>l.split("\t"));
+  const {r,c}=GRID.sel;
+  if(r+lines.length>gridRows()){ GRID.extra+= r+lines.length-gridRows(); gridRender(); }
+  lines.forEach((row,di)=>row.forEach((v,dj)=>{ if(c+dj<gridCols()) gridQueue(r+di,c+dj,v); }));
+}
+async function gridDeleteSelected(){
+  const i=GRID.sel.r; if(!GRID.data || i>=GRID.data.values.length) return gStatus("Select a row with data first.","err");
+  const k=gKeyCol(), label = (k>=0? gVal(i,k):"") || ("row "+(GRID.data.headerRow+1+i));
+  if(!await gConfirm(`Delete row ${GRID.data.headerRow+1+i}?`, `“${label}” will be removed. This cannot be undone.`)) return;
+  await gridFlush();
+  try{ const j=await api("gridDeleteRow",{tab:GRID.tab, r:GRID.data.headerRow+1+i, check:GRID.data.values[i].join("\u0001")});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.dirty=true; gStatus("Row deleted","ok"); gridLoad(GRID.tab);
+  }catch(err){ gStatus(err.message,"err"); }
+}
+function gConfirm(title,text,withInput){
+  return new Promise(res=>{
+    const d=document.createElement("div"); d.className="gdlg";
+    d.innerHTML=`<div class="box" role="dialog" aria-modal="true"><h3></h3><p class="note" style="margin:0 0 10px"></p>${withInput||""}<div class="row"><button class="btn ghost" type="button" data-a="no">Cancel</button><button class="btn" type="button" data-a="yes">OK</button></div></div>`;
+    d.querySelector("h3").textContent=title; d.querySelector("p").textContent=text;
+    document.body.appendChild(d);
+    const done=v=>{ let out=v; if(v && withInput){ out={}; d.querySelectorAll("input,select").forEach(x=>{ if(x.id) out[x.id]=x.value; }); out.name=out.gnname||""; out.from=out.gnfrom||""; } d.remove(); res(out); };
+    d.querySelector('[data-a="yes"]').onclick=()=>done(true); d.querySelector('[data-a="no"]').onclick=()=>done(false);
+    d.addEventListener("keydown",e=>{ if(e.key==="Escape") done(false); if(e.key==="Enter" && e.target.tagName!=="SELECT") done(true); });
+    setTimeout(()=>(d.querySelector("input")||d.querySelector('[data-a="yes"]')).focus(),20);
+  });
+}
+async function gridNewProjectDlg(){
+  const opts=`<option value="">Standard Command Deck columns</option>`+(GRID.tabs||[]).map(t=>`<option${t===GRID.tab?" selected":""}>${esc(t)}</option>`).join("");
+  const r=await gConfirm("New project","A new project is made with the same columns and dropdowns as the one you copy. Its rows start empty.",
+    `<div class="fld"><label for="gnname">Project name</label><input id="gnname" type="text" maxlength="80"></div>
+     <div class="fld"><label for="gnfrom">Copy columns from</label><select id="gnfrom">${opts}</select></div>`);
+  if(!r || !r.name.trim()) return;
+  await gridFlush(); gStatus("Creating project…","saving");
+  try{ const j=await api("gridNewProject",{name:r.name.trim(), copyFrom:r.from});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
+  }catch(err){ gStatus(err.message,"err"); }
+}
+function gStatus(t,cls){ const s=$("gstatus"); if(s){ s.textContent=t; s.className=cls||""; } }
+// ---- project tools: columns, rename, delete
+async function gridColumnsDlg(){
+  if(!GRID.tab) return gStatus("Choose a project first.","err");
+  gridCommit(); await gridFlush();
+  let j; try{ j=await api("gridColumns",{tab:GRID.tab}); }catch(err){ return gStatus(err.message,"err"); }
+  if(!j.ok) return gStatus(j.error,"err");
+  let cols=j.columns.map(c=>({id:c.id,name:c.name,list:(c.list||[]).join(", ")}));
+  const d=document.createElement("div"); d.className="gdlg";
+  d.innerHTML=`<div class="box" role="dialog" aria-modal="true" style="width:min(680px,100%);max-height:88vh;display:flex;flex-direction:column">
+    <h3>Columns · ${esc(GRID.tab)}</h3>
+    <p class="note" style="margin:0 0 10px">Rename, reorder (↑ ↓) or remove columns. For a dropdown, write its options separated by commas. Keep the standard names (Deliverables, Script Status, Shoot date, Live Link, Feedback, Payment %, Timeline Stage…) so the dashboard can read them.</p>
+    <div id="gclist" style="overflow:auto;flex:1;min-height:120px"></div>
+    <div class="row" style="justify-content:space-between"><button class="btn ghost" type="button" data-a="add">+ Add column</button>
+      <span><button class="btn ghost" type="button" data-a="no">Cancel</button> <button class="btn" type="button" data-a="yes">Save columns</button></span></div></div>`;
+  document.body.appendChild(d);
+  const list=d.querySelector("#gclist");
+  const sync=()=>list.querySelectorAll("[data-i]").forEach(r=>{ const i=+r.dataset.i; cols[i].name=r.querySelector(".cn").value; cols[i].list=r.querySelector(".cl").value; });
+  const draw=()=>{ list.innerHTML=cols.map((c,i)=>`<div data-i="${i}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+      <input class="cn" type="text" value="${esc(c.name)}" placeholder="Column name" style="flex:1 1 40%;min-width:0">
+      <input class="cl" type="text" value="${esc(c.list)}" placeholder="Dropdown options (optional)" style="flex:1 1 45%;min-width:0">
+      <button class="btn ghost" type="button" data-m="up" title="Move up" style="padding:6px 9px">↑</button>
+      <button class="btn ghost" type="button" data-m="down" title="Move down" style="padding:6px 9px">↓</button>
+      <button class="btn ghost" type="button" data-m="del" title="Remove column" style="padding:6px 9px;color:var(--red)">✕</button></div>`).join("") || `<p class="note">No columns. Add one.</p>`; };
+  draw();
+  list.addEventListener("click",e=>{ const b=e.target.closest("[data-m]"); if(!b) return; sync(); const i=+b.closest("[data-i]").dataset.i;
+    if(b.dataset.m==="up" && i>0) [cols[i-1],cols[i]]=[cols[i],cols[i-1]];
+    if(b.dataset.m==="down" && i<cols.length-1) [cols[i+1],cols[i]]=[cols[i],cols[i+1]];
+    if(b.dataset.m==="del") cols.splice(i,1);
+    draw(); });
+  d.querySelector('[data-a="add"]').onclick=()=>{ sync(); cols.push({id:0,name:"",list:""}); draw(); const ins=list.querySelectorAll(".cn"); ins[ins.length-1].focus(); };
+  d.querySelector('[data-a="no"]').onclick=()=>d.remove();
+  d.addEventListener("keydown",e=>{ if(e.key==="Escape") d.remove(); });
+  d.querySelector('[data-a="yes"]').onclick=async()=>{
+    sync();
+    const keep=cols.filter(c=>c.name.trim());
+    const removed=j.columns.filter(o=>!keep.some(c=>c.id===o.id));
+    if(removed.length && !confirm(`Remove ${removed.map(r=>"“"+r.name+"”").join(", ")}? The data in ${removed.length>1?"these columns":"this column"} will be deleted.`)) return;
+    gStatus("Saving columns…","saving");
+    try{ const r=await api("gridSetColumns",{tab:GRID.tab, columns:keep.map(c=>({id:c.id, name:c.name.trim(), list:c.list.split(",").map(x=>x.trim()).filter(Boolean)}))});
+      if(!r.ok) return gStatus(r.error,"err");
+      d.remove(); GRID.dirty=true; gridLoad(GRID.tab);
+    }catch(err){ gStatus(err.message,"err"); }
+  };
+  setTimeout(()=>{ const f=list.querySelector("input"); if(f) f.focus(); },20);
+}
+async function gridRenameDlg(){
+  if(!GRID.tab) return gStatus("Choose a project first.","err");
+  const r=await gConfirm("Rename project","The new name shows everywhere on the dashboard.",
+    `<div class="fld"><label for="gnname">New name</label><input id="gnname" type="text" maxlength="80" value="${esc(GRID.tab)}"></div>`);
+  if(!r || !r.name.trim() || r.name.trim()===GRID.tab) return;
+  gridCommit(); await gridFlush();
+  try{ const j=await api("projectRename",{tab:GRID.tab, name:r.name.trim()});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; GRID.dirty=true; gridTabsRender(j.tab); gridLoad(j.tab);
+  }catch(err){ gStatus(err.message,"err"); }
+}
+async function gridDeleteProjectDlg(){
+  if(!GRID.tab) return gStatus("Choose a project first.","err");
+  const r=await gConfirm(`Delete “${GRID.tab}”?`,"All rows of this project will be deleted for good. Export to Excel first if you want a copy. Type the project name to confirm.",
+    `<div class="fld"><label for="gdconf">Project name</label><input id="gdconf" type="text" autocomplete="off"></div>`);
+  if(!r) return;
+  if(r.gdconf.trim()!==GRID.tab) return gStatus("Name did not match. Nothing was deleted.","err");
+  gridCommit(); await gridFlush();
+  try{ const j=await api("projectDelete",{tab:GRID.tab, confirm:r.gdconf.trim()});
+    if(!j.ok) return gStatus(j.error,"err"); GRID.tabs=j.tabs; GRID.dirty=true;
+    const next=j.tabs[0]; if(next){ gridTabsRender(next); gridLoad(next); } else { GRID.tab=null; GRID.data=null; gridTabsRender(null); $("gtable").innerHTML=""; gStatus("Project deleted. No projects left.","ok"); }
+  }catch(err){ gStatus(err.message,"err"); }
+}
+
+// ---- Export to Excel (all projects, one sheet each). Uses SheetJS, loaded only when needed.
+function loadXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((ok,no)=>{ const s=document.createElement("script"); s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload=()=>ok(window.XLSX); s.onerror=()=>no(new Error("Could not load the Excel library. Check your internet connection.")); document.head.appendChild(s); });
+}
+async function exportExcel(){
+  const btns=[$("gxls"),$("gxopen")].filter(Boolean); const say=(t,c)=>{ gStatus(t,c); btns.forEach(b=>b.textContent = c==="saving" ? "Exporting…" : "Export Excel"); };
+  try{
+    if(!$("gridview").hidden){ gridCommit(); await gridFlush(); }
+    say("Preparing Excel…","saving");
+    const [X, t]=await Promise.all([loadXLSX(), api("gridTabs")]);
+    if(!t.ok) throw new Error(t.error);
+    if(!t.tabs.length) throw new Error("There are no projects to export.");
+    const wb=X.utils.book_new(), used=new Set();
+    for(const tab of t.tabs){
+      const g=await api("gridGet",{tab}); if(!g.ok) throw new Error(g.error);
+      const dateCols=g.headers.map((h,c)=>/date/i.test(h)?c:-1).filter(c=>c>=0);
+      const rows=g.values.map(r=>r.map((v,c)=>{
+        if(dateCols.includes(c) && /^\d{4}-\d{2}-\d{2}$/.test(v)){ const [y,m,d]=v.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); }
+        if(/^-?\d+(\.\d+)?$/.test(v) && v.length<15 && !/^0\d/.test(v)) return Number(v);
+        return v; }));
+      const ws=X.utils.aoa_to_sheet([g.headers, ...rows], {cellDates:true, dateNF:"dd-mmm-yyyy"});
+      ws["!cols"]=g.headers.map((h,c)=>({wch:Math.min(50, Math.max(10, h.length+2, ...g.values.slice(0,200).map(r=>String(r[c]||"").length+1)))}));
+      ws["!autofilter"]={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rows.length,1),c:Math.max(g.headers.length-1,0)}})};
+      let name=tab.replace(/[\\\/\?\*\[\]:]/g," ").slice(0,31).trim()||"Project", n=2;
+      while(used.has(name.toLowerCase())) name=name.slice(0,28)+" "+(n++);
+      used.add(name.toLowerCase()); X.utils.book_append_sheet(wb, ws, name);
+    }
+    const d=new Date(), p=x=>String(x).padStart(2,"0");
+    X.writeFile(wb, `Command-Deck-${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}.xlsx`);
+    say(`Exported ${t.tabs.length} project${t.tabs.length>1?"s":""} to Excel`,"ok");
+  }catch(err){ say(err.message,"err"); if($("gridview").hidden) alert(err.message); }
+}
+
 
 // ---- start
 (async()=>{
