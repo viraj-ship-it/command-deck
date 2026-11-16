@@ -235,6 +235,25 @@ tr.sel td:first-child{box-shadow:inset 2px 0 0 var(--neon),inset 0 1px 0 var(--n
 .sug .nm mark{background:transparent;color:var(--neon);text-shadow:0 0 8px rgba(61,255,143,.5)}
 .sug .pc{font-family:var(--mono);font-size:12px;color:var(--neon);text-align:right}
 .sug .pc.mid{color:var(--amber)}
+.sctbl{width:100%;border-collapse:collapse;font-size:13px}
+.sctbl th{font:600 10.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--green);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2);white-space:nowrap}
+.sctbl td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.sctbl tr.u{cursor:pointer}.sctbl tr.u:hover td{background:rgba(61,255,143,.04)}
+.sctbl .rk{font:700 15px var(--display);color:var(--muted);width:34px}
+.sctbl tr.u:nth-child(1) .rk{color:var(--neon)}
+.sctbl .nm b{display:block;font-weight:600}.sctbl .nm span{font-size:11.5px;color:var(--muted)}
+.sctbl .n{font-family:var(--mono);text-align:center}
+.sctbl .n.g{color:var(--neon)}.sctbl .n.a{color:var(--amber)}.sctbl .n.r{color:var(--red)}
+.scv{display:flex;align-items:center;gap:10px;min-width:170px}
+.scv b{font:700 18px var(--display);min-width:54px}
+.scv .tr{flex:1;height:6px;border-radius:6px;background:var(--faint);overflow:hidden}.scv .tr i{display:block;height:100%}
+.scdet td{background:rgba(0,0,0,.25);padding:6px 10px 12px 54px}
+.scdet table{width:100%;border-collapse:collapse;font-size:12px}
+.scdet th{font:600 10px var(--mono);letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px 8px;text-transform:uppercase}
+.scdet td.c{padding:6px 8px;border-top:1px solid var(--line);background:transparent}
+.scpill{display:inline-block;font:600 10px var(--mono);padding:2px 7px;border-radius:4px;border:1px solid var(--line2);white-space:nowrap}
+.scpill.ok{color:var(--neon);border-color:var(--deep)}.scpill.late{color:var(--amber);border-color:rgba(255,191,71,.4)}.scpill.over{color:var(--red);border-color:rgba(255,97,97,.4)}.scpill.nd{color:var(--muted)}
+
 .sug .mt{grid-column:1/-1;font-size:11.5px;color:var(--muted)}
 .sug .hd{display:block;font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--green);padding:6px 10px 4px;cursor:default}
 .sug .hd:hover{background:transparent}
@@ -380,6 +399,12 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
       </form>
       <div class="msg" id="pwmsg" role="status"></div>
     </div>
+    <div class="panel s12" id="scorepanel" hidden>
+      <div class="ph"><h2>Team Scoreboard</h2><span class="role admin">ADMIN ONLY</span></div>
+      <p class="note" style="margin:0 0 10px">How many timeline stages of their assigned projects each user finished on time. A stage counts once its Planned Date has passed or it is completed. Score = on time ÷ (on time + late + overdue).</p>
+      <div id="scorebody"><p class="note">Loading…</p></div>
+    </div>
+
     <div class="panel s12" id="userspanel" hidden>
       <div class="ph"><h2>Users</h2><span class="role admin">SUPER ADMIN</span></div>
       <form class="uform" id="uform" novalidate>
@@ -942,6 +967,7 @@ function showData(j){
   const when = j.updatedAt ? new Date(j.updatedAt).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "";
   load(j.projects||[], j.payments||null, `Command Deck database · loaded ${when}`);
   if(ME && typeof gridShowButton==="function") gridShowButton();
+  if(SCORE) renderScores();
 }
 const isSuper = () => !!ME && ME.role==="superadmin";
 const isAdmin = () => !!ME && (ME.role==="admin" || ME.role==="superadmin");
@@ -956,6 +982,7 @@ function enterApp(j){
   showData(j);
   $("logpanel").hidden = !isSuper();
   if(isSuper()){ loadUsers(); loadLog(); loadPrompts(); }
+  $("scorepanel").hidden = !isAdmin(); if(isAdmin()) loadScores();
   gridShowButton();
   maybeStartTour();
   startVira(j.prompts);
@@ -966,7 +993,7 @@ function signOut(msg){
   stopVira();
   if(TOKEN) api("logout").catch(()=>{});
   TOKEN=null; ME=null; setTok(null);
-  $("lpass").value=""; $("pwpanel").hidden=true; $("userspanel").hidden=true; $("openpanel").hidden=true; $("checkspanel").hidden=true; $("paypanel").hidden=true; $("logpanel").hidden=true; if($("vmpanel")) $("vmpanel").hidden=true; PAY=null; LOG=[];
+  $("lpass").value=""; $("pwpanel").hidden=true; $("userspanel").hidden=true; $("openpanel").hidden=true; $("checkspanel").hidden=true; $("paypanel").hidden=true; $("logpanel").hidden=true; $("scorepanel").hidden=true; SCORE=null; if($("vmpanel")) $("vmpanel").hidden=true; PAY=null; LOG=[];
   gateShow(msg);
 }
 
@@ -1088,6 +1115,54 @@ function renderUsers(){
     tb.appendChild(tr);
   });
 }
+
+// ---- Team Scoreboard (Admins): on-time timeline stages of each User's assigned projects
+let SCORE=null;
+async function loadScores(){
+  try{ const j=await api("scoreboard"); if(!j.ok){ $("scorebody").innerHTML=`<p class="note" style="color:var(--red)">${esc(j.error)}</p>`; return; } SCORE=j.users; renderScores(); }
+  catch(err){ $("scorebody").innerHTML=`<p class="note" style="color:var(--red)">${esc(err.message)}</p>`; }
+}
+function userScore(u){
+  const res={onTime:0, late:0, over:0, nodate:0, upcoming:0, lateDays:0, projects:[]};
+  u.projects.forEach(name=>{
+    const p=PROJECTS.find(x=>x.name===name); if(!p) return;
+    const t=projectTimeline(p), pr={name, stages:[], onTime:0, late:0, over:0};
+    t.stages.forEach(s=>{
+      let k, days=0;
+      if(s.cdate){ if(s.lateBy>0){ k="late"; days=s.lateBy; } else k="ok"; }
+      else if(s.complete){ k = s.date>=TODAY ? "ok" : "nd"; }
+      else if(s.date<TODAY){ k="over"; days=Math.round((TODAY-s.date)/DAY); }
+      else k="up";
+      if(k==="ok"){ res.onTime++; pr.onTime++; } else if(k==="late"){ res.late++; pr.late++; res.lateDays+=days; } else if(k==="over"){ res.over++; pr.over++; res.lateDays+=days; } else if(k==="nd") res.nodate++; else res.upcoming++;
+      pr.stages.push({name:s.name, plan:s.date, done:s.cdate, k, days});
+    });
+    res.projects.push(pr);
+  });
+  const due=res.onTime+res.late+res.over;
+  res.score = due ? Math.round(res.onTime/due*100) : null;
+  res.avgLate = (res.late+res.over) ? Math.round(res.lateDays/(res.late+res.over)) : 0;
+  return res;
+}
+function renderScores(){
+  if(!SCORE) return;
+  if(!SCORE.length){ $("scorebody").innerHTML=`<p class="note">No Users yet. Add users with the role User and assign projects to them.</p>`; return; }
+  const rows=SCORE.map(u=>({u, s:userScore(u)})).sort((a,b)=>(b.s.score??-1)-(a.s.score??-1) || a.s.over-b.s.over || a.u.name.localeCompare(b.u.name));
+  const col=v=> v==null? "var(--muted)" : v>=100? "var(--neon)" : v>=70? "var(--green)" : v>=40? "var(--amber)" : "var(--red)";
+  const lab={ok:["On time","ok"],late:["Late","late"],over:["Overdue","over"],nd:["Done · no date","nd"],up:["Upcoming","nd"]};
+  const fmtS=d=>d? d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}) : "—";
+  $("scorebody").innerHTML = `<div class="scroll"><table class="sctbl" style="min-width:760px"><thead><tr><th>#</th><th>User</th><th>Projects</th><th>On time</th><th>Late</th><th>Overdue</th><th>Avg days late</th><th>Score</th></tr></thead><tbody>`+
+    rows.map(({u,s},i)=>`<tr class="u" data-i="${i}" tabindex="0" aria-expanded="false"><td class="rk">${s.score==null?"–":i+1}</td>
+      <td class="nm"><b>${esc(u.name||u.email)}</b><span>${esc(u.email)}</span></td>
+      <td class="n">${u.projects.length}</td><td class="n g">${s.onTime}</td><td class="n a">${s.late}</td><td class="n r">${s.over}</td>
+      <td class="n">${s.late+s.over? s.avgLate+"d" : "—"}</td>
+      <td><div class="scv"><b style="color:${col(s.score)}">${s.score==null?"—":s.score}</b><span class="tr"><i style="width:${s.score||0}%;background:${col(s.score)}"></i></span></div>
+        ${s.score==null?`<span class="note" style="font-size:11px">${u.projects.length?"no stage due yet":"no projects assigned"}</span>`:""}${s.nodate?`<span class="note" style="font-size:11px">${s.nodate} done without Completed Date (not counted)</span>`:""}</td></tr>
+      <tr class="scdet" data-d="${i}" hidden><td colspan="8">${s.projects.length? s.projects.map(pr=>`<div style="margin:8px 0 4px;font-weight:600">${esc(pr.name)} <span class="note" style="font-weight:400">· ${pr.onTime} on time · ${pr.late} late · ${pr.over} overdue</span></div>`+
+        (pr.stages.length? `<table><thead><tr><th>Stage</th><th>Planned</th><th>Completed</th><th>Status</th></tr></thead><tbody>${pr.stages.map(st=>`<tr><td class="c">${esc(st.name)}</td><td class="c">${fmtS(st.plan)}</td><td class="c">${fmtS(st.done)}</td><td class="c"><span class="scpill ${lab[st.k][1]}">${lab[st.k][0]}${st.days?` · ${st.days}d`:""}</span></td></tr>`).join("")}</tbody></table>`
+          : `<p class="note" style="margin:0">No timeline dates in this project yet (Timeline Stage / Planned Date).</p>`)).join("") : `<p class="note">No projects assigned.</p>`}</td></tr>`).join("")+`</tbody></table></div>`;
+  $("scorebody").querySelectorAll("tr.u").forEach(tr=>{ const tog=()=>{ const d=$("scorebody").querySelector(`tr[data-d="${tr.dataset.i}"]`); d.hidden=!d.hidden; tr.setAttribute("aria-expanded",String(!d.hidden)); };
+    tr.onclick=tog; tr.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); tog(); } }; });
+}
 // ---- assign projects to a User (Super Admin)
 async function assignDlg(u){
   let j; try{ j=await api("getUserProjects",{email:u.email}); }catch(err){ return note(err.message,false); }
@@ -1122,7 +1197,7 @@ async function assignDlg(u){
     const btn=d.querySelector('[data-a="yes"]'); btn.disabled=true;
     try{ const r=await api("setUserProjects",{email:u.email, projects:[...chosen]});
       if(!r.ok){ btn.disabled=false; return note(r.error,false); }
-      d.remove(); USERS=r.users; renderUsers(); note(`${u.name||u.email} now has ${r.count} project${r.count===1?"":"s"}.`,true);
+      d.remove(); USERS=r.users; renderUsers(); if(isAdmin()) loadScores(); note(`${u.name||u.email} now has ${r.count} project${r.count===1?"":"s"}.`,true);
     }catch(err){ btn.disabled=false; note(err.message,false); }
   };
   setTimeout(()=>find.focus(),20);
