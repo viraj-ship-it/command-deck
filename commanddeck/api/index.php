@@ -64,6 +64,7 @@ $b = json_decode($raw ?: '{}', true);
 if (!is_array($b)) $b = [];
 try {
   ensure_brand_column();
+  ensure_assign_table();
   out(route($b));
 } catch (UserError $e) {
   out(['ok' => false, 'error' => $e->getMessage()]);
@@ -87,10 +88,12 @@ function route(array $b): array {
     case 'listPrompts': return superadmin($b, function () { return ['ok' => true, 'prompts' => list_prompts()]; });
     case 'addPrompt': return superadmin($b, function () use ($b) { return add_prompt($b); });
     case 'removePrompt': return superadmin($b, function () use ($b) { return remove_prompt($b); });
-    case 'gridTabs': return admin($b, function () { return ['ok' => true, 'tabs' => tab_names(), 'brands' => brand_map()]; });
+    case 'gridTabs': return member($b, function ($me) { $t = tab_names($me); return ['ok' => true, 'tabs' => $t, 'brands' => array_intersect_key(brand_map(), array_flip($t))]; });
+    case 'getUserProjects': return superadmin($b, function () use ($b) { return get_user_projects($b); });
+    case 'setUserProjects': return superadmin($b, function () use ($b) { return set_user_projects($b); });
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
-    case 'gridGet': return admin($b, function ($me) use ($b) { return grid_get($b, $me); });
-    case 'gridSave': return admin($b, function ($me) use ($b) { return grid_save($b, $me); });
+    case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
+    case 'gridSave': return member($b, function ($me) use ($b) { return grid_save($b, $me); });
     case 'gridDeleteRow': return superadmin($b, function () use ($b) { return grid_delete_row($b); });
     case 'gridNewProject': return admin($b, function () use ($b) { return grid_new_project($b); });
     case 'gridColumns': return superadmin($b, function () use ($b) { return grid_columns($b); });
@@ -146,6 +149,13 @@ function is_super(array $u): bool { return $u['role'] === 'superadmin'; }
 function is_admin(array $u): bool { return $u['role'] === 'admin' || $u['role'] === 'superadmin'; }
 function clean_role($r): string { return in_array($r, ['superadmin', 'admin'], true) ? $r : 'user'; }
 function superadmin(array $b, callable $fn): array { return admin($b, $fn, true); }
+function member(array $b, callable $fn): array {   // any signed-in user; project access is checked inside
+  $a = auth($b);
+  if (!$a['ok']) return $a;
+  $pdo = db(); $pdo->beginTransaction();
+  try { $r = $fn($a['user']); $pdo->commit(); return $r; }
+  catch (Throwable $e) { $pdo->rollBack(); throw $e; }
+}
 function admin(array $b, callable $fn, bool $super = false): array {
   $a = auth($b);
   if (!$a['ok']) return $a;
@@ -161,7 +171,9 @@ function pub(array $u): array { return ['email' => $u['email'], 'name' => $u['na
 function users_list(): array {
   $last = [];
   foreach (q("SELECT email, MAX(logged_at) AS t FROM cd_login_log WHERE result = 'Success' GROUP BY email")->fetchAll() as $r) $last[$r['email']] = iso($r['t']);
-  return array_map(function ($u) use ($last) { $p = pub($u); $p['lastLogin'] = $last[$u['email']] ?? ''; return $p; },
+  $cnt = [];
+  foreach (q('SELECT user_id, COUNT(*) c FROM cd_user_projects GROUP BY user_id')->fetchAll() as $r) $cnt[(int)$r['user_id']] = (int)$r['c'];
+  return array_map(function ($u) use ($last, $cnt) { $p = pub($u); $p['lastLogin'] = $last[$u['email']] ?? ''; $p['projects'] = $cnt[(int)$u['id']] ?? 0; return $p; },
                    q('SELECT * FROM cd_users ORDER BY name')->fetchAll());
 }
 function add_user(array $b): array {
@@ -198,6 +210,7 @@ function remove_user(array $b, array $me): array {
   if ($u['role'] === 'superadmin' && (int)q("SELECT COUNT(*) c FROM cd_users WHERE role = 'superadmin' AND active = 1")->fetch()['c'] <= 1)
     return ['ok' => false, 'error' => 'At least one Super Admin is needed.'];
   q('DELETE FROM cd_sessions WHERE user_id = ?', [$u['id']]);
+  q('DELETE FROM cd_user_projects WHERE user_id = ?', [$u['id']]);
   q('DELETE FROM cd_users WHERE id = ?', [$u['id']]);
   return ['ok' => true, 'users' => users_list()];
 }
@@ -276,7 +289,43 @@ function project_set_brand(array $b): array {
   q('UPDATE cd_projects SET brand = ? WHERE id = ?', [$brand !== '' ? $brand : $p['name'], $p['id']]);
   return ['ok' => true, 'tabs' => tab_names(), 'brands' => brand_map()];
 }
-function tab_names(): array { return array_column(q('SELECT name FROM cd_projects ORDER BY position, id')->fetchAll(), 'name'); }
+function tab_names(?array $me = null): array {
+  if ($me && !is_admin($me))
+    return array_column(q('SELECT p.name FROM cd_projects p JOIN cd_user_projects a ON a.project_id = p.id WHERE a.user_id = ? ORDER BY p.position, p.id', [$me['id']])->fetchAll(), 'name');
+  return array_column(q('SELECT name FROM cd_projects ORDER BY position, id')->fetchAll(), 'name');
+}
+/* ---- project assignment: a normal User sees and edits only the projects assigned to them */
+function ensure_assign_table(): void {
+  static $done = false; if ($done) return; $done = true;
+  try { q('SELECT user_id FROM cd_user_projects LIMIT 1'); return; } catch (Throwable $e) { /* table missing */ }
+  global $CFG;
+  $tail = ($CFG['driver'] ?? 'mysql') === 'sqlite' ? '' : ' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+  try { db()->exec("CREATE TABLE IF NOT EXISTS cd_user_projects (user_id INT NOT NULL, project_id INT NOT NULL, PRIMARY KEY (user_id, project_id))$tail"); }
+  catch (Throwable $e) { error_log('Command Deck assign table: ' . $e->getMessage()); }
+}
+function assigned_ids(array $me): array { return array_map('intval', array_column(q('SELECT project_id FROM cd_user_projects WHERE user_id = ?', [$me['id']])->fetchAll(), 'project_id')); }
+function require_access(array $me, array $p): void {
+  if (is_admin($me)) return;
+  if (!in_array((int)$p['id'], assigned_ids($me), true)) throw new UserError('This project is not assigned to you.');
+}
+function get_user_projects(array $b): array {
+  $u = q('SELECT id, role FROM cd_users WHERE email = ?', [norm($b['email'] ?? '')])->fetch();
+  if (!$u) return ['ok' => false, 'error' => 'User not found.'];
+  return ['ok' => true, 'projects' => array_column(q('SELECT p.name FROM cd_projects p JOIN cd_user_projects a ON a.project_id = p.id WHERE a.user_id = ? ORDER BY p.position, p.id', [$u['id']])->fetchAll(), 'name'),
+          'all' => tab_names(), 'brands' => brand_map()];
+}
+function set_user_projects(array $b): array {
+  $u = q('SELECT id FROM cd_users WHERE email = ?', [norm($b['email'] ?? '')])->fetch();
+  if (!$u) return ['ok' => false, 'error' => 'User not found.'];
+  q('DELETE FROM cd_user_projects WHERE user_id = ?', [$u['id']]);
+  $names = array_values(array_unique(array_map('strval', is_array($b['projects'] ?? null) ? $b['projects'] : [])));
+  $n = 0;
+  foreach ($names as $name) {
+    $p = q('SELECT id FROM cd_projects WHERE name = ?', [$name])->fetch();
+    if ($p) { q('INSERT INTO cd_user_projects (user_id, project_id) VALUES (?, ?)', [$u['id'], $p['id']]); $n++; }
+  }
+  return ['ok' => true, 'count' => $n, 'users' => users_list()];
+}
 function project_by_name($name): array {
   $p = q('SELECT * FROM cd_projects WHERE name = ?', [(string)$name])->fetch();
   if (!$p) throw new UserError('Project "' . $name . '" not found. Reload and try again.');
@@ -298,7 +347,9 @@ function cell(array $row, array $col): string { return (string)($row['data'][(st
 /* ------------------------------------------------------------------ dashboard data */
 function with_data(array $out, array $user): array {
   $projects = []; $payments = [];
+  $only = is_admin($user) ? null : assigned_ids($user);
   foreach (q('SELECT * FROM cd_projects ORDER BY position, id')->fetchAll() as $p) {
+    if ($only !== null && !in_array((int)$p['id'], $only, true)) continue;
     $cols = cols_of((int)$p['id']); $rows = rows_of((int)$p['id']);
     $byName = []; foreach ($cols as $c) { $k = trim($c['name']); if (!isset($byName[$k])) $byName[$k] = $c; }
     $get = function ($row, $name) use ($byName) { return isset($byName[$name]) ? trim(cell($row, $byName[$name])) : ''; };
@@ -335,14 +386,14 @@ function with_data(array $out, array $user): array {
 
 /* ------------------------------------------------------------------ data entry grid */
 function grid_get(array $b, array $me): array {
-  $p = project_by_name($b['tab'] ?? ''); $cols = grid_cols((int)$p['id'], $me); $rows = rows_of((int)$p['id']);
+  $p = project_by_name($b['tab'] ?? ''); require_access($me, $p); $cols = grid_cols((int)$p['id'], $me); $rows = rows_of((int)$p['id']);
   $values = array_map(function ($r) use ($cols) { return array_map(function ($c) use ($r) { return cell($r, $c); }, $cols); }, $rows);
   return ['ok' => true, 'tab' => $p['name'], 'headerRow' => 0, 'headers' => array_column($cols, 'name'), 'values' => $values,
           'formulas' => [], 'dates' => [], 'locked' => [],
           'lists' => array_map(function ($c) { $l = json_decode((string)$c['list_values'], true); return is_array($l) && $l ? array_values($l) : null; }, $cols)];
 }
 function grid_save(array $b, array $me): array {
-  $p = project_by_name($b['tab'] ?? ''); $pid = (int)$p['id']; $cols = grid_cols($pid, $me); $rows = rows_of($pid);
+  $p = project_by_name($b['tab'] ?? ''); require_access($me, $p); $pid = (int)$p['id']; $cols = grid_cols($pid, $me); $rows = rows_of($pid);
   $changes = array_slice(is_array($b['changes'] ?? null) ? $b['changes'] : [], 0, 2000);
   $max = 0; foreach ($changes as $ch) $max = max($max, (int)($ch['r'] ?? 0));
   for ($i = count($rows); $i < min($max, 5000); $i++) {
@@ -428,7 +479,7 @@ function project_rename(array $b): array {
 function project_delete(array $b): array {
   $p = project_by_name($b['tab'] ?? '');
   if (trim((string)($b['confirm'] ?? '')) !== $p['name']) return ['ok' => false, 'error' => 'Type the project name exactly to delete it.'];
-  q('DELETE FROM cd_rows WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_columns WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_projects WHERE id = ?', [$p['id']]);
+  q('DELETE FROM cd_rows WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_columns WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_user_projects WHERE project_id = ?', [$p['id']]); q('DELETE FROM cd_projects WHERE id = ?', [$p['id']]);
   return ['ok' => true, 'tabs' => tab_names()];
 }
 
@@ -437,7 +488,7 @@ function import_data(array $b): array {
   $d = $b['payload'] ?? null;
   if (!is_array($d) || !isset($d['tabs']) || !is_array($d['tabs'])) return ['ok' => false, 'error' => 'Nothing to import.'];
   if (($b['confirm'] ?? '') !== 'REPLACE') return ['ok' => false, 'error' => 'Import not confirmed.'];
-  q('DELETE FROM cd_rows'); q('DELETE FROM cd_columns'); q('DELETE FROM cd_projects');
+  q('DELETE FROM cd_rows'); q('DELETE FROM cd_columns'); q('DELETE FROM cd_user_projects'); q('DELETE FROM cd_projects');
   $np = 0; $nr = 0;
   foreach ($d['tabs'] as $i => $t) {
     $name = trim((string)($t['name'] ?? '')); if ($name === '' || $name[0] === '_') continue;
