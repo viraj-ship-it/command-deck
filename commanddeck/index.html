@@ -462,7 +462,8 @@ td.proj-c{font-family:var(--mono);font-size:11.5px;color:var(--green);white-spac
           <button class="btn ghost" type="button" id="remccsave">Save CC</button>
           <h3 style="margin-top:16px">4 · Try it</h3>
           <div class="btnrow" style="justify-content:flex-start">
-            <button class="btn ghost" type="button" id="remtest">Send test email to me</button>
+            <div class="fld" style="width:100%;margin:0 0 6px"><label for="remto">Send test to</label><input id="remto" type="email" placeholder="leave empty = my email"></div>
+            <button class="btn ghost" type="button" id="remtest">Send test email</button>
             <button class="btn ghost" type="button" id="remprev">Preview today</button>
             <button class="btn ghost" type="button" id="remrun">Send now</button>
           </div>
@@ -1188,8 +1189,8 @@ async function loadReminders(){ const j=await remCall("reminderSettings",{}); if
 $("remon").addEventListener("change",async()=>{ const j=await remCall("reminderSettings",{enabled:$("remon").checked}, $("remon").checked?"Reminders switched on.":"Reminders switched off."); if(j) remShow(j); else $("remon").checked=!$("remon").checked; });
 $("rmsave").onclick=async()=>{ const j=await remCall("reminderMail",{host:$("rmhost").value.trim(),port:+$("rmport").value,user:$("rmuser").value.trim(),pass:$("rmpass").value,fromName:$("rmname").value.trim()},"Sender saved. Now press “Send test email to me”.",$("rmsave")); if(j){ $("rmpass").value=""; remShow(j); } };
 $("remccsave").onclick=async()=>{ const j=await remCall("reminderSettings",{cc:$("remcc").value},"CC saved.",$("remccsave")); if(j) remShow(j); };
-$("remtest").onclick=()=>remCall("reminderTest",{},j=>`Test email sent to ${j.to}. Check the inbox (and spam).`,$("remtest"));
-$("remprev").onclick=async()=>{ const j=await remCall("reminderPreview",{},j=>j.users?`${j.users} user(s) would get an email today · ${j.items} stage(s).`:"Nobody needs a reminder today.",$("remprev"));
+$("remtest").onclick=()=>remCall("reminderTest",{to:$("remto").value.trim()},j=>`Test email sent to ${j.to}. Check the inbox (and spam).`,$("remtest"));
+$("remprev").onclick=async()=>{ const j=await remCall("reminderPreview",{},j=>j.users?`${(j.preview||[]).length} email(s) to ${j.users} user(s) today · ${j.items} stage(s).`:"Nobody needs a reminder today.",$("remprev"));
   if(!j) return; $("remprevbox").innerHTML=(j.preview||[]).map(x=>`<details class="rempv"><summary><b>${esc(x.name)}</b> · ${esc(x.email)} · ${esc(x.subject)}</summary><div class="mail">${x.html}</div></details>`).join(""); };
 $("remrun").onclick=async()=>{ if(!confirm("Send today's reminder emails now?")) return;
   const j=await remCall("reminderRunNow",{},j=>j.skipped?j.skipped:`${j.sent} email(s) sent${j.failed?`, ${j.failed} failed`:""}.`,$("remrun")); if(j){ $("remprevbox").innerHTML=""; loadReminders(); } };
