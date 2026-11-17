@@ -100,7 +100,7 @@ function route(array $b): array {
     case 'reminderPreview': return superadmin($b, function () { $r = run_reminders(true); return ['ok' => true] + $r; });
     case 'reminderRunNow': return superadmin($b, function () { $r = run_reminders(false); return ['ok' => true] + $r; });
     case 'reminderMail': return superadmin($b, function () use ($b) { return reminder_mail_save($b); });
-    case 'reminderTest': return superadmin($b, function ($me) { return reminder_test($me); });
+    case 'reminderTest': return superadmin($b, function ($me) use ($b) { return reminder_test($me, $b); });
     case 'editHistory': return superadmin($b, function () use ($b) { return edit_history($b); });
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
@@ -666,8 +666,10 @@ function reminder_email(array $u, array $items, string $site): array {
   $first = explode(' ', trim($u['name'] ?: 'there'))[0];
   $projects = array_values(array_unique(array_column($items, 'project')));
   $pl = count($projects) > 2 ? $projects[0] . ', ' . $projects[1] . ' +' . (count($projects) - 2) . ' more' : implode(', ', $projects);
-  $subject = $over ? '⚠️ ' . count($over) . ' stage' . (count($over) > 1 ? 's' : '') . ' overdue – ' . $pl
-                   : '⏰ Deadline tomorrow – ' . $pl;
+  $names = function ($list) { $n = array_column($list, 'stage'); return count($n) > 3 ? implode(', ', array_slice($n, 0, 3)) . ' +' . (count($n) - 3) : implode(', ', $n); };
+  $subject = $pl . ' – ' . ($over ? '⚠️ ' . count($over) . ' stage' . (count($over) > 1 ? 's' : '') . ' overdue (' . $names($over) . ')'
+                                  : '⏰ ' . $names($soon) . ' due tomorrow')
+           . ($over && $soon ? ' + ' . count($soon) . ' due tomorrow' : '');
   $d = function ($ymd) { return date('d M Y', strtotime($ymd)); };
   $h = function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
   $row = function ($i, $late) use ($d, $h) {
@@ -710,9 +712,10 @@ function run_reminders(bool $dry = false): array {
   $res = ['users' => 0, 'items' => 0, 'sent' => 0, 'failed' => 0, 'preview' => []];
   if (!$dry && setting('reminders_enabled', '0') !== '1') return $res + ['skipped' => 'Reminders are switched off.'];
   foreach ($plan as $x) {
-    $u = $x['user']; $m = reminder_email($u, $x['items'], $site);
-    $res['users']++; $res['items'] += count($x['items']);
-    if ($dry) { $res['preview'][] = ['name' => $u['name'], 'email' => $u['email'], 'subject' => $m['subject'], 'items' => $x['items'], 'html' => $m['html']]; continue; }
+    $u = $x['user']; $res['users']++; $res['items'] += count($x['items']);
+    $byProject = []; foreach ($x['items'] as $i) $byProject[$i['project_id']][] = $i;   // one email per project
+    foreach ($byProject as $items) { $x['items'] = $items; $m = reminder_email($u, $items, $site);
+    if ($dry) { $res['preview'][] = ['name' => $u['name'], 'email' => $u['email'], 'subject' => $m['subject'], 'items' => $items, 'html' => $m['html']]; continue; }
     $err = send_mail($u['email'], reminder_cc(), $m['subject'], $m['html'], $m['text']);
     q('INSERT INTO cd_reminder_log (sent_at, email, name, subject, items, status, error) VALUES (?, ?, ?, ?, ?, ?, ?)', [now(), $u['email'], $u['name'], mb_substr($m['subject'], 0, 300), count($x['items']), $err ? 'Failed' : 'Sent', $err]);
     if ($err) { $res['failed']++; continue; }
@@ -720,6 +723,7 @@ function run_reminders(bool $dry = false): array {
     foreach ($x['items'] as $i) {
       try { q('INSERT INTO cd_reminders (sent_at, user_id, project_id, stage, planned, kind) VALUES (?, ?, ?, ?, ?, ?)', [now(), $u['id'], $i['project_id'], $i['stage'], $i['planned'], $i['kind']]); }
       catch (Throwable $e) { /* already recorded */ }
+    }
     }
   }
   set_setting('reminders_last_run', now());
@@ -803,9 +807,12 @@ function reminder_mail_save(array $b): array {
   @chmod($file, 0600); if (function_exists('opcache_invalidate')) @opcache_invalidate($file, true); $CFG = $cfg;
   return reminder_settings([]);
 }
-function reminder_test(array $me): array {
-  $m = reminder_email($me, [['project' => 'Sample Project', 'stage' => 'Shoot', 'planned' => date('Y-m-d', strtotime('-3 days')), 'kind' => 'overdue', 'days' => 3, 'project_id' => 0],
+function reminder_test(array $me, array $b = []): array {
+  $to = norm($b['to'] ?? '') ?: $me['email'];
+  if (!valid_email($to)) return ['ok' => false, 'error' => 'Enter a valid email to send the test to.'];
+  $who = q('SELECT * FROM cd_users WHERE email = ?', [$to])->fetch() ?: ['name' => explode('@', $to)[0], 'email' => $to];
+  $m = reminder_email($who, [['project' => 'Sample Project', 'stage' => 'Shoot', 'planned' => date('Y-m-d', strtotime('-3 days')), 'kind' => 'overdue', 'days' => 3, 'project_id' => 0],
                             ['project' => 'Sample Project', 'stage' => 'First Cut', 'planned' => date('Y-m-d', strtotime('+1 day')), 'kind' => 'tomorrow', 'days' => -1, 'project_id' => 0]], 'https://barterro.com/commanddeck/');
-  $err = send_mail($me['email'], [], '[TEST] ' . $m['subject'], $m['html'], $m['text']);
-  return $err ? ['ok' => false, 'error' => $err] : ['ok' => true, 'to' => $me['email']];
+  $err = send_mail($to, [], '[TEST] ' . $m['subject'], $m['html'], $m['text']);
+  return $err ? ['ok' => false, 'error' => $err] : ['ok' => true, 'to' => $to];
 }
