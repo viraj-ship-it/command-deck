@@ -105,6 +105,7 @@ function route(array $b): array {
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
     case 'gridSave': return member($b, function ($me) use ($b) { return grid_save($b, $me); });
+    case 'gridFind': return member($b, function ($me) use ($b) { return grid_find($b, $me); });
     case 'gridMoveRow': return member($b, function ($me) use ($b) { return grid_move_row($b, $me); });
     case 'gridMoveColumn': return superadmin($b, function () use ($b) { return grid_move_column($b); });
     case 'gridDeleteRow': return superadmin($b, function () use ($b) { return grid_delete_row($b); });
@@ -484,6 +485,21 @@ function grid_save(array $b, array $me): array {
   foreach ($logs as [$r, $cn, $old, $new]) log_edit($p, $old === '' ? 'Added' : ($new === '' ? 'Cleared' : 'Changed'), $cn, $old, $new, (int)$rows[$r - 1]['id'], row_label($rows[$r - 1], $allCols, $r));
   if ($logs) trim_edit_log();
   return ['ok' => true, 'saved' => $saved, 'conflicts' => $conflicts];
+}
+// Find text in every project this person can edit (Users: only assigned projects, without hidden columns)
+function grid_find(array $b, array $me): array {
+  $q = mb_strtolower(trim((string)($b['q'] ?? '')));
+  if (mb_strlen($q) < 2) return ['ok' => true, 'matches' => [], 'more' => false];
+  $out = []; $max = 300;
+  foreach (tab_names($me) as $name) {
+    $p = project_by_name($name); $cols = grid_cols((int)$p['id'], $me);
+    foreach (rows_of((int)$p['id']) as $i => $r) foreach ($cols as $c) {
+      $v = cell($r, $c);
+      if ($v !== '' && mb_strpos(mb_strtolower($v), $q) !== false) { $out[] = ['tab' => $name, 'r' => $i + 1, 'col' => $c['name'], 'value' => $v]; if (count($out) > $max) break 3; }
+    }
+  }
+  $more = count($out) > $max; if ($more) array_pop($out);
+  return ['ok' => true, 'matches' => $out, 'more' => $more];
 }
 // Drag & drop: move one row (1-based positions) — anyone who can edit the project
 function grid_move_row(array $b, array $me): array {
