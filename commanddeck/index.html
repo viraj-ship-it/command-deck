@@ -1567,6 +1567,16 @@ function gridInstall(){
 #gtable th,#gtable td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;height:30px;max-width:320px}
 #gtable thead th{position:sticky;top:0;z-index:3;background:#0d1f17;color:var(--green);font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;text-align:left;white-space:nowrap}
 #gtable .rn{position:sticky;left:0;z-index:2;background:#0a1712;color:var(--muted);font:11px var(--mono);text-align:center;min-width:46px;width:46px}
+#gtable td.rn[draggable=true]{cursor:grab}
+#gtable td.rn[draggable=true]:hover{color:var(--neon);background:#0d2219}
+#gtable td.rn[draggable=true]:hover::before{content:"⋮⋮ ";letter-spacing:-2px;color:var(--green)}
+#gtable thead th[draggable=true]{cursor:grab}
+#gtable thead th[draggable=true]:hover{background:#12291f}
+#gtable tr.dragging td,#gtable .dragcol{opacity:.35}
+#gtable tr.dropT td{box-shadow:inset 0 3px 0 var(--neon)}
+#gtable tr.dropB td{box-shadow:inset 0 -3px 0 var(--neon)}
+#gtable th.dropL,#gtable td.dropL{box-shadow:inset 3px 0 0 var(--neon)}
+#gtable th.dropR,#gtable td.dropR{box-shadow:inset -3px 0 0 var(--neon)}
 #gtable thead .rn{z-index:4}
 #gtable td .v{display:block;padding:6px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:110px;color:var(--ink);cursor:cell}
 #gtable td.k2 .v{min-width:240px}
@@ -1610,7 +1620,7 @@ function gridInstall(){
     </div>
     <div id="gtabs" role="tablist" aria-label="Project tabs"></div>
     <div id="gwrap" tabindex="0"><table id="gtable"></table></div>
-    <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Ctrl+V pastes from Excel/Sheets. Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
+    <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Ctrl+V pastes from Excel/Sheets · drag a row number to move the row (Super Admin: drag a column header to move the column). Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
   document.body.appendChild(v);
   $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
   $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
@@ -1621,6 +1631,7 @@ function gridInstall(){
   w.addEventListener("dblclick",e=>{ const td=e.target.closest("td[data-c]"); if(td) gridEdit(); });
   w.addEventListener("keydown",gridKeys);
   w.addEventListener("paste",gridPaste);
+  gridDragInit();
   window.addEventListener("beforeunload",e=>{ if(GRID.queue.size){ e.preventDefault(); e.returnValue=""; } });
   // header button
   const tb=$("tourbtn"); if(tb && !$("gopen")){ const b=document.createElement("button"); b.className="btn"; b.id="gopen"; b.type="button"; b.textContent="Edit Data"; b.hidden=true; b.onclick=gridOpen; tb.parentNode.insertBefore(b,tb);
@@ -1647,6 +1658,55 @@ async function gridClose(){
   gridCommit(); await gridFlush();
   $("gridview").hidden=true; document.body.style.overflow="";
   if(GRID.dirty){ GRID.dirty=false; try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); }catch(e){} }
+}
+
+// ---- drag & drop rows (row number) and columns (header), like Google Sheets
+const GDRAG={kind:null, from:-1, to:-1};
+function gridDragClear(){ $("gtable").querySelectorAll(".dropT,.dropB,.dropL,.dropR,.dragging,.dragcol").forEach(e=>e.classList.remove("dropT","dropB","dropL","dropR","dragging","dragcol")); }
+function gridDragInit(){
+  const t=$("gtable");
+  t.addEventListener("dragstart",e=>{
+    const rn=e.target.closest && e.target.closest("td.rn[draggable=true]"), th=e.target.closest && e.target.closest("thead th[draggable=true]");
+    if(rn){ GDRAG.kind="row"; GDRAG.from=+rn.parentNode.dataset.ri; rn.parentNode.classList.add("dragging"); }
+    else if(th){ GDRAG.kind="col"; GDRAG.from=+th.dataset.hc; t.querySelectorAll(`[data-c="${GDRAG.from}"],th[data-hc="${GDRAG.from}"]`).forEach(x=>x.classList.add("dragcol")); }
+    else return;
+    gridCommit(); GDRAG.to=GDRAG.from; e.dataTransfer.effectAllowed="move"; try{ e.dataTransfer.setData("text/plain",""); }catch(_){}
+  });
+  t.addEventListener("dragover",e=>{
+    if(!GDRAG.kind) return; e.preventDefault(); e.dataTransfer.dropEffect="move";
+    t.querySelectorAll(".dropT,.dropB,.dropL,.dropR").forEach(x=>x.classList.remove("dropT","dropB","dropL","dropR"));
+    if(GDRAG.kind==="row"){
+      const tr=e.target.closest("tbody tr[data-ri]"); if(!tr) return;
+      let i=Math.min(+tr.dataset.ri, GRID.data.values.length-1); const rows=t.querySelectorAll("tbody tr[data-ri]"), row=rows[i];
+      const r=row.getBoundingClientRect(), after = +tr.dataset.ri>i || e.clientY>r.top+r.height/2;
+      GDRAG.to = after ? (i>=GDRAG.from? i : i+1) : (i>GDRAG.from? i-1 : i);
+      row.classList.add(after?"dropB":"dropT");
+    } else {
+      const cell=e.target.closest("th[data-hc],td[data-c]"); if(!cell) return;
+      const c=+(cell.dataset.hc ?? cell.dataset.c), th=t.querySelector(`th[data-hc="${c}"]`), r=th.getBoundingClientRect(), after=e.clientX>r.left+r.width/2;
+      GDRAG.to = after ? (c>=GDRAG.from? c : c+1) : (c>GDRAG.from? c-1 : c);
+      t.querySelectorAll(`th[data-hc="${c}"],td[data-c="${c}"]`).forEach(x=>x.classList.add(after?"dropR":"dropL"));
+    }
+  });
+  t.addEventListener("dragend",()=>{ gridDragClear(); if(GDRAG.kind && GDRAG.to!==GDRAG.from && GDRAG.to>=0) gridDragDrop(GDRAG.kind,GDRAG.from,GDRAG.to); GDRAG.kind=null; });
+  t.addEventListener("drop",e=>{ if(GDRAG.kind) e.preventDefault(); });
+}
+async function gridDragDrop(kind,from,to){
+  await gridFlush();
+  if(GRID.queue.size){ gStatus("Wait for changes to save, then try again.","err"); return; }
+  gStatus(kind==="row"?"Moving row…":"Moving column…","saving");
+  try{
+    const j = kind==="row"
+      ? await api("gridMoveRow",{tab:GRID.tab, from:from+1, to:to+1, check:GRID.data.values[from].join("\u0001")})
+      : await api("gridMoveColumn",{tab:GRID.tab, from:from+1, to:to+1, name:GRID.data.headers[from]});
+    if(!j.ok){ gStatus(j.error,"err"); return; }
+    GRID.dirty=true;
+    // update the grid locally so the view does not jump
+    const mv=(a)=>{ const x=a.splice(from,1)[0]; a.splice(to,0,x); };
+    if(kind==="row"){ mv(GRID.data.values); GRID.iso={}; GRID.sel={r:to,c:GRID.sel.c}; }
+    else { mv(GRID.data.headers); if(GRID.data.lists) mv(GRID.data.lists); GRID.data.values.forEach(r=>{ while(r.length<GRID.data.headers.length) r.push(""); mv(r); }); GRID.iso={}; GRID.sel={r:GRID.sel.r,c:to}; }
+    gridRender(); gStatus(kind==="row"?`Row moved to ${to+1}`:`Column moved`, "ok");
+  }catch(err){ gStatus(err.message,"err"); }
 }
 // ---- Edit Data filters: brand + project
 function gridShownTabs(){
@@ -1717,9 +1777,10 @@ const gKeyCol = () => GRID.data.headers.indexOf("Deliverables");
 
 function gridRender(){
   const d=GRID.data; if(!d) return; const k=gKeyCol();
-  let h=`<thead><tr><th class="rn">#</th>${d.headers.map((x,c)=>`<th class="${c===k?"k2":""}" title="${esc(x)}">${esc(x||"(column "+(c+1)+")")}</th>`).join("")}</tr></thead><tbody>`;
+  const colDrag=isSuper();
+  let h=`<thead><tr><th class="rn">#</th>${d.headers.map((x,c)=>`<th class="${c===k?"k2":""}" data-hc="${c}" ${colDrag?'draggable="true"':""} title="${esc(x)}${colDrag?" · drag to move":""}">${esc(x||"(column "+(c+1)+")")}</th>`).join("")}</tr></thead><tbody>`;
   for(let i=0;i<gridRows();i++){
-    h+=`<tr><td class="rn">${d.headerRow+1+i}</td>`;
+    h+=`<tr data-ri="${i}"><td class="rn" ${i<d.values.length?`draggable="true" title="Drag to move this row"`:""}>${d.headerRow+1+i}</td>`;
     for(let c=0;c<d.headers.length;c++){
       const cls=[c===k?"k2":"", gRO(i,c)?"ro":"", gList(c)&&!gRO(i,c)?"dd":"", GRID.queue.has(i+":"+c)?"pend":""].join(" ");
       h+=`<td data-r="${i}" data-c="${c}" class="${cls}"><span class="v">${esc(GRID.queue.has(i+":"+c)?GRID.queue.get(i+":"+c).value:gVal(i,c))}</span></td>`;
