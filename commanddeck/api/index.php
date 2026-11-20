@@ -105,6 +105,8 @@ function route(array $b): array {
     case 'projectSetBrand': return superadmin($b, function () use ($b) { return project_set_brand($b); });
     case 'gridGet': return member($b, function ($me) use ($b) { return grid_get($b, $me); });
     case 'gridSave': return member($b, function ($me) use ($b) { return grid_save($b, $me); });
+    case 'gridMoveRow': return member($b, function ($me) use ($b) { return grid_move_row($b, $me); });
+    case 'gridMoveColumn': return superadmin($b, function () use ($b) { return grid_move_column($b); });
     case 'gridDeleteRow': return superadmin($b, function () use ($b) { return grid_delete_row($b); });
     case 'gridNewProject': return admin($b, function () use ($b) { return grid_new_project($b); });
     case 'gridColumns': return superadmin($b, function () use ($b) { return grid_columns($b); });
@@ -482,6 +484,34 @@ function grid_save(array $b, array $me): array {
   foreach ($logs as [$r, $cn, $old, $new]) log_edit($p, $old === '' ? 'Added' : ($new === '' ? 'Cleared' : 'Changed'), $cn, $old, $new, (int)$rows[$r - 1]['id'], row_label($rows[$r - 1], $allCols, $r));
   if ($logs) trim_edit_log();
   return ['ok' => true, 'saved' => $saved, 'conflicts' => $conflicts];
+}
+// Drag & drop: move one row (1-based positions) — anyone who can edit the project
+function grid_move_row(array $b, array $me): array {
+  $p = project_by_name($b['tab'] ?? ''); require_access($me, $p); $pid = (int)$p['id'];
+  $rows = rows_of($pid); $n = count($rows); $from = (int)($b['from'] ?? 0); $to = (int)($b['to'] ?? 0);
+  if ($from < 1 || $from > $n) return ['ok' => false, 'error' => 'Row not found. Reload and try again.'];
+  $to = max(1, min($n, $to));
+  $cols = grid_cols($pid, $me);
+  if (isset($b['check']) && (string)$b['check'] !== implode("\u{1}", array_map(function ($c) use ($rows, $from) { return cell($rows[$from - 1], $c); }, $cols)))
+    return ['ok' => false, 'error' => 'This row was changed by someone else. Reload and try again.'];
+  if ($from === $to) return ['ok' => true];
+  $moved = array_splice($rows, $from - 1, 1)[0]; array_splice($rows, $to - 1, 0, [$moved]);
+  foreach ($rows as $i => $r) if ((int)$r['position'] !== $i + 1) q('UPDATE cd_rows SET position = ? WHERE id = ?', [$i + 1, $r['id']]);
+  log_edit($p, 'Moved row', '', 'Row ' . $from, 'Row ' . $to, (int)$moved['id'], row_label($moved, cols_of($pid), $to));
+  return ['ok' => true];
+}
+// Drag & drop: move one column (1-based positions) — Super Admin
+function grid_move_column(array $b): array {
+  $p = project_by_name($b['tab'] ?? ''); $pid = (int)$p['id'];
+  $cols = cols_of($pid); $n = count($cols); $from = (int)($b['from'] ?? 0); $to = (int)($b['to'] ?? 0);
+  if ($from < 1 || $from > $n) return ['ok' => false, 'error' => 'Column not found. Reload and try again.'];
+  $to = max(1, min($n, $to));
+  if (isset($b['name']) && trim((string)$b['name']) !== trim($cols[$from - 1]['name'])) return ['ok' => false, 'error' => 'Columns were changed by someone else. Reload and try again.'];
+  if ($from === $to) return ['ok' => true];
+  $moved = array_splice($cols, $from - 1, 1)[0]; array_splice($cols, $to - 1, 0, [$moved]);
+  foreach ($cols as $i => $c) if ((int)$c['position'] !== $i + 1) q('UPDATE cd_columns SET position = ? WHERE id = ?', [$i + 1, $c['id']]);
+  log_edit($p, 'Moved column', $moved['name'], 'Position ' . $from, 'Position ' . $to);
+  return ['ok' => true];
 }
 function grid_delete_row(array $b): array {
   $p = project_by_name($b['tab'] ?? ''); $pid = (int)$p['id']; $cols = cols_of($pid); $rows = rows_of($pid);
