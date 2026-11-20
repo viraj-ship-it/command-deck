@@ -1532,7 +1532,7 @@ async function loadPrompts(){
 }
 
 // ================= Data Entry: edit the data like a spreadsheet =================
-const GRID = { tab:null, data:null, sel:{r:0,c:0}, editing:null, queue:new Map(), timer:null, busy:false, extra:5, dirty:false };
+const GRID = { tab:null, data:null, sel:{r:0,c:0}, anchor:{r:0,c:0}, editing:null, queue:new Map(), timer:null, busy:false, extra:5, dirty:false, undo:[], redo:[], widths:{}, find:null };
 const gridCanEdit = () => isAdmin() || (!!ME && PROJECTS.length>0);   // Users edit only their assigned projects
 
 function gridInstall(){
@@ -1565,7 +1565,7 @@ function gridInstall(){
 #gwrap{flex:1;overflow:auto;position:relative}
 #gtable{border-collapse:separate;border-spacing:0;font:13px var(--body);min-width:100%}
 #gtable th,#gtable td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;height:30px;max-width:320px}
-#gtable thead th{position:sticky;top:0;z-index:3;background:#0d1f17;color:var(--green);font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;text-align:left;white-space:nowrap}
+#gtable thead th{position:sticky;top:0;z-index:3;user-select:none;background:#0d1f17;color:var(--green);font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;text-align:left;white-space:nowrap}
 #gtable .rn{position:sticky;left:0;z-index:2;background:#0a1712;color:var(--muted);font:11px var(--mono);text-align:center;min-width:46px;width:46px}
 #gtable td.rn[draggable=true]{cursor:grab}
 #gtable td.rn[draggable=true]:hover{color:var(--neon);background:#0d2219}
@@ -1585,6 +1585,27 @@ function gridInstall(){
 #gtable td.ro .v{color:var(--muted);cursor:not-allowed;font-style:italic}
 #gtable td.dd .v::after{content:"▾";float:right;color:var(--muted);margin-left:6px}
 #gtable td.sel{outline:2px solid var(--neon);outline-offset:-2px;background:rgba(61,255,143,.07)}
+#gtable td.rsel{background:rgba(61,255,143,.13)}
+#gtable td.rsel.sel{background:rgba(61,255,143,.07)}
+#gtable td.fm .v{background:rgba(255,191,71,.22)}
+#gtable td.fm.fcur .v{background:rgba(255,191,71,.55);color:#fff}
+#gtable td.fw .v{min-width:0}
+#gtable td.filltg{background:rgba(61,255,143,.08);box-shadow:inset 0 0 0 1px rgba(61,255,143,.5)}
+#gfill{position:absolute;width:9px;height:9px;background:var(--neon);border:2px solid #04110a;border-radius:2px;cursor:crosshair;z-index:5;display:none}
+#gtable thead th .rz{position:absolute;top:0;right:-3px;width:7px;height:100%;cursor:col-resize;z-index:6}
+#gtable thead th .rz:hover,#gtable thead th .rz.on{background:var(--neon)}
+#gfind{display:none;align-items:center;gap:8px;padding:8px 20px;background:#050b08;border-bottom:1px solid var(--line)}
+#gfind.on{display:flex}
+#gfind input[type=text]{flex:0 1 320px;background:var(--panel);border:1px solid var(--line2);border-radius:6px;color:var(--ink);font:500 13px var(--body);padding:7px 10px;outline:none}
+#gfind input[type=text]:focus{border-color:var(--neon)}
+#gfind .fc{font:11px var(--mono);color:var(--muted);min-width:90px}
+#gfind label{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);cursor:pointer}#gfind label input{width:auto;accent-color:var(--neon)}
+#gfind button{padding:6px 10px;font-size:12px}
+#gfres{max-height:180px;overflow:auto;padding:0 20px 8px;background:#050b08;border-bottom:1px solid var(--line);display:none;font-size:12.5px}
+#gfres.on{display:block}
+#gfres div{padding:5px 8px;border-radius:5px;cursor:pointer;display:grid;grid-template-columns:200px 160px 1fr;gap:10px}
+#gfres div:hover,#gfres div.cur{background:rgba(61,255,143,.08)}
+#gfres b{color:var(--neon);font-weight:500}#gfres span{color:var(--muted)}
 #gtable td.pend .v{background:rgba(255,191,71,.12)}
 #gtable td.conf .v{background:rgba(255,97,97,.18)}
 #gtable td input,#gtable td select{width:100%;min-width:110px;height:30px;box-sizing:border-box;border:0;outline:2px solid var(--neon);background:#04110a;color:#fff;font:13px var(--body);padding:0 8px}
@@ -1600,6 +1621,9 @@ function gridInstall(){
   document.head.appendChild(css);
   const v=document.createElement("section"); v.id="gridview"; v.hidden=true;
   v.innerHTML=`<div class="gbar"><h2>Data <span>Entry</span></h2>
+      <button class="btn ghost" type="button" id="gundo" title="Undo (Ctrl+Z)" disabled>↶ Undo</button>
+      <button class="btn ghost" type="button" id="gredo" title="Redo (Ctrl+Y)" disabled>↷ Redo</button>
+      <button class="btn ghost" type="button" id="gfindbtn" title="Find (Ctrl+F)">Find</button>
       <button class="btn ghost" type="button" id="gadd">+ Add rows</button>
       <button class="btn ghost" type="button" id="gdel">Delete row</button>
       <button class="btn ghost" type="button" id="gcols">Columns</button>
@@ -1619,15 +1643,34 @@ function gridInstall(){
       <span class="gcnt" id="gcnt"></span>
     </div>
     <div id="gtabs" role="tablist" aria-label="Project tabs"></div>
-    <div id="gwrap" tabindex="0"><table id="gtable"></table></div>
-    <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Ctrl+V pastes from Excel/Sheets · drag a row number to move the row (Super Admin: drag a column header to move the column). Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
+    <div id="gfind" role="search"><input type="text" id="gfq" placeholder="Find in this project…" aria-label="Find"><span class="fc" id="gfc"></span>
+      <button class="btn ghost" type="button" id="gfprev" title="Previous (Shift+Enter)">↑</button><button class="btn ghost" type="button" id="gfnext" title="Next (Enter)">↓</button>
+      <label><input type="checkbox" id="gfall"> All projects</label><button class="btn ghost" type="button" id="gfclose" title="Close (Esc)">✕</button></div>
+    <div id="gfres"></div>
+    <div id="gwrap" tabindex="0"><table id="gtable"></table><div id="gfill" title="Drag to fill"></div></div>
+    <div class="ghint">Click a cell to select · type or press Enter to edit · Enter = save &amp; move down · Tab = right · Esc = cancel · Shift+click or drag to select many cells · Ctrl+C / Ctrl+X / Ctrl+V · Delete clears · drag the green square to fill · Ctrl+Z undo · Ctrl+F find · drag a header edge to resize · drag a row number to move the row (Super Admin: drag a column header to move the column). Changes save automatically. Use <b>Columns</b> to add, rename, reorder or remove columns and set dropdown options.</div>`;
   document.body.appendChild(v);
   $("gclose").onclick=gridClose; $("greload").onclick=()=>gridLoad(GRID.tab);
   $("gadd").onclick=()=>{ GRID.extra+=5; gridRender(); gridScrollTo(gridRows()-1,0); };
   $("gdel").onclick=gridDeleteSelected; $("gnew").onclick=gridNewProjectDlg; gridFiltersInit();
   $("gcols").onclick=gridColumnsDlg; $("gren").onclick=gridRenameDlg; $("gbrand").onclick=gridBrandDlg; $("gpdel").onclick=gridDeleteProjectDlg; $("gxls").onclick=exportExcel; $("ghist").onclick=()=>historyDlg(GRID.tab);
   const w=$("gwrap");
-  w.addEventListener("mousedown",e=>{ if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td) return; gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c); });
+  w.addEventListener("mousedown",e=>{
+    if(e.target.id==="gfill") return;
+    if(GRID.editing && GRID.editing.el.contains(e.target)) return; const td=e.target.closest("td[data-c]"); if(!td || e.button!==0) return;
+    gridCommit(); gridSelect(+td.dataset.r,+td.dataset.c,true,e.shiftKey);
+    GRID.dragSel=true; e.preventDefault(); w.focus();
+  });
+  w.addEventListener("mouseover",e=>{ if(!GRID.dragSel) return; const td=e.target.closest("td[data-c]"); if(td) gridSelect(+td.dataset.r,+td.dataset.c,true,true); });
+  document.addEventListener("mouseup",()=>{ GRID.dragSel=false; });
+  // copy / cut the selected cells as tab-separated text (pastes into Excel / Sheets)
+  const onClip=(e,cut)=>{ if($("gridview").hidden || GRID.editing || !GRID.data || document.activeElement!==w) return;
+    e.preventDefault(); e.clipboardData.setData("text/plain", gRangeTSV()); const R=gRange(), n=(R.r2-R.r1+1)*(R.c2-R.c1+1);
+    if(cut) gClearRange("cut"); gStatus(`${cut?"Cut":"Copied"} ${n} cell${n>1?"s":""}`,"ok"); };
+  document.addEventListener("copy",e=>onClip(e,false)); document.addEventListener("cut",e=>onClip(e,true));
+  document.addEventListener("keydown",e=>{ if(!$("gridview").hidden && (e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="f" && !GRID.editing){ e.preventDefault(); gFindOpen(); } });
+  $("gundo").onclick=()=>{ gridUndo(false); w.focus(); }; $("gredo").onclick=()=>{ gridUndo(true); w.focus(); };
+  gFillInit(); gResizeInit(); gFindInit();
   w.addEventListener("dblclick",e=>{ const td=e.target.closest("td[data-c]"); if(td) gridEdit(); });
   w.addEventListener("keydown",gridKeys);
   w.addEventListener("paste",gridPaste);
@@ -1660,6 +1703,101 @@ async function gridClose(){
   if(GRID.dirty){ GRID.dirty=false; try{ const j=await api("data",{refresh:true}); if(j.ok) showData(j); }catch(e){} }
 }
 
+
+// ---- fill handle: drag the small square to copy the selection down / right
+function gFillPos(){
+  const f=$("gfill"); if(!f) return; const R=gRange(), td=gCell(R.r2,R.c2), w=$("gwrap");
+  if(!td || GRID.editing || !gridCanEdit()){ f.style.display="none"; return; }
+  const a=td.getBoundingClientRect(), b=w.getBoundingClientRect();
+  f.style.left=(a.right-b.left+w.scrollLeft-6)+"px"; f.style.top=(a.bottom-b.top+w.scrollTop-6)+"px"; f.style.display="block";
+}
+function gFillInit(){
+  const f=$("gfill"), w=$("gwrap"); let src=null, tgt=null;
+  const paint=()=>{ $("gtable").querySelectorAll("td.filltg").forEach(x=>x.classList.remove("filltg")); if(!tgt) return;
+    for(let i=tgt.r1;i<=tgt.r2;i++) for(let c=tgt.c1;c<=tgt.c2;c++){ const td=gCell(i,c); if(td) td.classList.add("filltg"); } };
+  f.addEventListener("mousedown",e=>{ e.preventDefault(); e.stopPropagation(); gridCommit(); src=gRange(); tgt=null;
+    const move=ev=>{ const el=document.elementFromPoint(ev.clientX,ev.clientY), td=el&&el.closest("td[data-c]"); if(!td) return;
+      const r=+td.dataset.r, c=+td.dataset.c, down=r-src.r2, right=c-src.c2;
+      if(down<=0 && right<=0){ tgt=null; }
+      else if(down>=right){ tgt={r1:src.r2+1,r2:r,c1:src.c1,c2:src.c2}; } else { tgt={r1:src.r1,r2:src.r2,c1:src.c2+1,c2:c}; }
+      if(tgt && tgt.r2>=gridRows()-1){ GRID.extra+=3; gridRender(); }
+      paint(); };
+    const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up);
+      if(tgt){ const h=src.r2-src.r1+1, wd=src.c2-src.c1+1, list=[];
+        for(let i=tgt.r1;i<=tgt.r2;i++) for(let c=tgt.c1;c<=tgt.c2;c++) list.push({i,c,v:gCur(src.r1+((i-src.r1)%h+h)%h, src.c1+((c-src.c1)%wd+wd)%wd)});
+        const n=gridApply(list,"fill"); GRID.anchor={r:src.r1,c:src.c1}; gridSelect(tgt.r2,tgt.c2,true,true); if(n) gStatus(`Filled ${n} cell${n>1?"s":""}`,"saving"); }
+      tgt=null; paint(); w.focus(); };
+    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up); });
+  w.addEventListener("scroll",()=>{},{passive:true});
+}
+// ---- column width: drag the right edge of a header (saved in this browser)
+function gWidthsLoad(tab){ try{ return JSON.parse(localStorage.getItem("cd_colw_"+tab)||"{}")||{}; }catch(e){ return {}; } }
+function gWidthsSave(){ try{ localStorage.setItem("cd_colw_"+GRID.tab, JSON.stringify(GRID.widths)); }catch(e){} }
+function gResizeInit(){
+  const t=$("gtable");
+  t.addEventListener("mousedown",e=>{
+    const rz=e.target.closest(".rz"); if(!rz) return; e.preventDefault(); e.stopPropagation();
+    const c=+rz.dataset.rz, th=rz.parentNode, name=GRID.data.headers[c], x0=e.clientX, w0=th.getBoundingClientRect().width; rz.classList.add("on"); th.draggable=false;
+    const set=w=>{ const st=`width:${w}px;min-width:${w}px;max-width:${w}px`; th.setAttribute("style",st); t.querySelectorAll(`td[data-c="${c}"]`).forEach(td=>{ td.setAttribute("style",st); td.classList.add("fw"); }); };
+    const move=ev=>{ const w=Math.max(50,Math.min(900,Math.round(w0+ev.clientX-x0))); GRID.widths[name]=w; set(w); gFillPos(); };
+    const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); rz.classList.remove("on"); th.draggable=isSuper(); gWidthsSave(); };
+    document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
+  }, true);
+  t.addEventListener("dblclick",e=>{ const rz=e.target.closest(".rz"); if(!rz) return; e.stopPropagation(); delete GRID.widths[GRID.data.headers[+rz.dataset.rz]]; gWidthsSave(); gridRender(); }, true);
+  t.addEventListener("dragstart",e=>{ if(e.target.closest && e.target.closest(".rz")) e.preventDefault(); }, true);
+}
+// ---- Find (Ctrl+F): this project, or all projects
+function gFindOpen(){ $("gfind").classList.add("on"); $("gfq").focus(); $("gfq").select(); if($("gfq").value) gFindRun(); }
+function gFindClose(){ $("gfind").classList.remove("on"); $("gfres").classList.remove("on"); GRID.find=null; gFindPaint(); $("gwrap").focus(); }
+function gFindPaint(){
+  const t=$("gtable"); if(!t) return; t.querySelectorAll("td.fm").forEach(x=>x.classList.remove("fm","fcur"));
+  const F=GRID.find; if(!F || F.all) return;
+  F.hits.forEach(([i,c],n)=>{ const td=gCell(i,c); if(td){ td.classList.add("fm"); if(n===F.cur) td.classList.add("fcur"); } });
+}
+function gFindRun(){
+  const q=$("gfq").value.trim().toLowerCase();
+  if(!q){ GRID.find=null; $("gfc").textContent=""; $("gfres").classList.remove("on"); gFindPaint(); return; }
+  if($("gfall").checked){ gFindAll(q); return; }
+  const hits=[]; for(let i=0;i<GRID.data.values.length;i++) for(let c=0;c<gridCols();c++) if(String(gCur(i,c)).toLowerCase().includes(q)) hits.push([i,c]);
+  GRID.find={q, hits, cur: hits.length?0:-1, all:false}; $("gfres").classList.remove("on"); gFindGo(0);
+}
+function gFindGo(d){
+  const F=GRID.find; if(!F) return;
+  if(F.all){ if(!F.items.length) return; F.cur=(F.cur+d+F.items.length)%F.items.length; gFindAllGo(F.cur); return; }
+  if(!F.hits.length){ $("gfc").textContent="No match"; gFindPaint(); return; }
+  F.cur=(F.cur+d+F.hits.length)%F.hits.length; const [i,c]=F.hits[F.cur];
+  $("gfc").textContent=`${F.cur+1} of ${F.hits.length}`; gFindPaint(); GRID.anchor={r:i,c}; gridSelect(i,c,false,true);
+}
+async function gFindAll(q){
+  $("gfc").textContent="Searching…";
+  try{ const j=await api("gridFind",{q}); if(!j.ok){ $("gfc").textContent=j.error; return; }
+    GRID.find={q, all:true, items:j.matches, cur:-1};
+    $("gfc").textContent = j.matches.length ? `${j.matches.length}${j.more?"+":""} match${j.matches.length>1?"es":""}` : "No match";
+    const hl=v=>{ const s=String(v), k=s.toLowerCase().indexOf(q); return k<0? esc(s) : esc(s.slice(0,k))+"<b>"+esc(s.slice(k,k+q.length))+"</b>"+esc(s.slice(k+q.length)); };
+    $("gfres").innerHTML=j.matches.map((m,n)=>`<div data-n="${n}"><span>${esc(m.tab)}</span><span>${esc(m.col)} · row ${m.r}</span><span style="color:var(--ink)">${hl(m.value.length>160?m.value.slice(0,160)+"…":m.value)}</span></div>`).join("");
+    $("gfres").classList.toggle("on", !!j.matches.length);
+    $("gfres").querySelectorAll("div[data-n]").forEach(d=>d.onclick=()=>{ GRID.find.cur=+d.dataset.n; gFindAllGo(GRID.find.cur); });
+  }catch(err){ $("gfc").textContent=err.message; }
+}
+async function gFindAllGo(n){
+  const m=GRID.find.items[n]; if(!m) return;
+  $("gfres").querySelectorAll("div[data-n]").forEach(d=>d.classList.toggle("cur",+d.dataset.n===n));
+  $("gfc").textContent=`${n+1} of ${GRID.find.items.length}`;
+  if(m.tab!==GRID.tab){ gridCommit(); await gridFlush(); GRID.fb=""; GRID.fq=""; if($("gpq")) $("gpq").value=""; if($("gbtxt")) $("gbtxt").textContent="All brands"; gridTabsRender(m.tab); await gridLoad(m.tab); }
+  const c=GRID.data.headers.indexOf(m.col); if(c<0) return;
+  GRID.anchor={r:m.r-1,c}; gridSelect(m.r-1,c,false,false);
+  const td=gCell(m.r-1,c); if(td){ td.classList.add("fm","fcur"); setTimeout(()=>td.classList.remove("fm","fcur"),2500); }
+}
+function gFindInit(){
+  let t=null;
+  $("gfindbtn").onclick=gFindOpen; $("gfclose").onclick=gFindClose;
+  $("gfq").addEventListener("input",()=>{ clearTimeout(t); t=setTimeout(gFindRun,$("gfall").checked?400:150); });
+  $("gfall").addEventListener("change",()=>{ $("gfq").placeholder=$("gfall").checked?"Find in all projects…":"Find in this project…"; gFindRun(); });
+  $("gfq").addEventListener("keydown",e=>{ e.stopPropagation();
+    if(e.key==="Enter"){ e.preventDefault(); if(!GRID.find || GRID.find.q!==$("gfq").value.trim().toLowerCase()) gFindRun(); else gFindGo(e.shiftKey?-1:1); }
+    else if(e.key==="Escape"){ e.preventDefault(); gFindClose(); } });
+  $("gfnext").onclick=()=>gFindGo(1); $("gfprev").onclick=()=>gFindGo(-1);
+}
 // ---- drag & drop rows (row number) and columns (header), like Google Sheets
 const GDRAG={kind:null, from:-1, to:-1};
 function gridDragClear(){ $("gtable").querySelectorAll(".dropT,.dropB,.dropL,.dropR,.dragging,.dragcol").forEach(e=>e.classList.remove("dropT","dropB","dropL","dropR","dragging","dragcol")); }
@@ -1761,7 +1899,7 @@ function gridTabsRender(on){
 async function gridLoad(tab){
   gStatus("Loading "+tab+"…","saving"); $("gtable").innerHTML="";
   try{ const j=await api("gridGet",{tab}); if(!j.ok) return gStatus(j.error,"err");
-    GRID.tab=tab; GRID.data=j; GRID.extra=5; GRID.sel={r:0,c:0};
+    GRID.tab=tab; GRID.data=j; GRID.extra=5; GRID.sel={r:0,c:0}; GRID.anchor={r:0,c:0}; GRID.undo=[]; GRID.redo=[]; GRID.widths=gWidthsLoad(tab); gUndoBtns();
     GRID.iso={}; (j.dates||[]).forEach(([i,c,d])=>GRID.iso[i+":"+c]=d);
     GRID.ro=new Set((j.locked||[]).map(([r,c])=>(r-j.headerRow-1)+":"+(c-1)));
     gridRender(); gStatus("Ready","ok"); $("gwrap").focus();
@@ -1778,24 +1916,59 @@ const gKeyCol = () => GRID.data.headers.indexOf("Deliverables");
 function gridRender(){
   const d=GRID.data; if(!d) return; const k=gKeyCol();
   const colDrag=isSuper();
-  let h=`<thead><tr><th class="rn">#</th>${d.headers.map((x,c)=>`<th class="${c===k?"k2":""}" data-hc="${c}" ${colDrag?'draggable="true"':""} title="${esc(x)}${colDrag?" · drag to move":""}">${esc(x||"(column "+(c+1)+")")}</th>`).join("")}</tr></thead><tbody>`;
+  const W=c=>{ const w=GRID.widths[d.headers[c]]; return w? `width:${w}px;min-width:${w}px;max-width:${w}px` : ""; };
+  let h=`<thead><tr><th class="rn">#</th>${d.headers.map((x,c)=>`<th class="${c===k?"k2":""}" data-hc="${c}" style="${W(c)}" ${colDrag?'draggable="true"':""} title="${esc(x)}${colDrag?" · drag to move":""}">${esc(x||"(column "+(c+1)+")")}<span class="rz" data-rz="${c}" title="Drag to resize · double-click to reset"></span></th>`).join("")}</tr></thead><tbody>`;
   for(let i=0;i<gridRows();i++){
     h+=`<tr data-ri="${i}"><td class="rn" ${i<d.values.length?`draggable="true" title="Drag to move this row"`:""}>${d.headerRow+1+i}</td>`;
     for(let c=0;c<d.headers.length;c++){
       const cls=[c===k?"k2":"", gRO(i,c)?"ro":"", gList(c)&&!gRO(i,c)?"dd":"", GRID.queue.has(i+":"+c)?"pend":""].join(" ");
-      h+=`<td data-r="${i}" data-c="${c}" class="${cls}"><span class="v">${esc(GRID.queue.has(i+":"+c)?GRID.queue.get(i+":"+c).value:gVal(i,c))}</span></td>`;
+      const w=W(c); h+=`<td data-r="${i}" data-c="${c}" class="${cls}${w?" fw":""}" style="${w}"><span class="v">${esc(GRID.queue.has(i+":"+c)?GRID.queue.get(i+":"+c).value:gVal(i,c))}</span></td>`;
     }
     h+="</tr>";
   }
   $("gtable").innerHTML=h+"</tbody>";
-  gridSelect(GRID.sel.r,GRID.sel.c,true);
+  gridSelect(GRID.sel.r,GRID.sel.c,true,true);
+  gFindPaint();
 }
 const gCell=(i,c)=>$("gtable").querySelector(`td[data-r="${i}"][data-c="${c}"]`);
-function gridSelect(i,c,quiet){
+function gridSelect(i,c,quiet,extend){
   i=Math.max(0,Math.min(gridRows()-1,i)); c=Math.max(0,Math.min(gridCols()-1,c));
   const old=$("gtable").querySelector("td.sel"); if(old) old.classList.remove("sel");
-  GRID.sel={r:i,c}; const td=gCell(i,c); if(td){ td.classList.add("sel"); if(!quiet) td.scrollIntoView({block:"nearest",inline:"nearest"}); }
+  GRID.sel={r:i,c}; if(!extend) GRID.anchor={r:i,c};
+  GRID.anchor.r=Math.min(GRID.anchor.r,gridRows()-1); GRID.anchor.c=Math.min(GRID.anchor.c,gridCols()-1);
+  const td=gCell(i,c); if(td){ td.classList.add("sel"); if(!quiet) td.scrollIntoView({block:"nearest",inline:"nearest"}); }
+  gPaintRange();
 }
+// selected rectangle (anchor → active cell)
+function gRange(){ const a=GRID.anchor, b=GRID.sel; return {r1:Math.min(a.r,b.r), r2:Math.max(a.r,b.r), c1:Math.min(a.c,b.c), c2:Math.max(a.c,b.c)}; }
+function gPaintRange(){
+  const t=$("gtable"); t.querySelectorAll("td.rsel").forEach(x=>x.classList.remove("rsel"));
+  const R=gRange(), multi = R.r1!==R.r2 || R.c1!==R.c2;
+  if(multi) for(let i=R.r1;i<=R.r2;i++) for(let c=R.c1;c<=R.c2;c++){ const td=gCell(i,c); if(td) td.classList.add("rsel"); }
+  gFillPos();
+}
+const gCur=(i,c)=> GRID.queue.has(i+":"+c) ? GRID.queue.get(i+":"+c).value : gVal(i,c);
+// apply many cell changes as ONE undo step
+function gridApply(list, label){
+  const step=[];
+  list.forEach(({i,c,v})=>{ if(i<0||c<0||c>=gridCols()||gRO(i,c)) return; const before=gCur(i,c); if(before===v) return; step.push({i,c,before,after:v}); });
+  if(!step.length) return 0;
+  const need=Math.max(...step.map(x=>x.i))+1; if(need>gridRows()){ GRID.extra+=need-gridRows(); gridRender(); }
+  step.forEach(x=>gridQueue(x.i,x.c,x.after));
+  GRID.undo.push({label:label||"edit", step}); if(GRID.undo.length>100) GRID.undo.shift(); GRID.redo=[]; gUndoBtns();
+  return step.length;
+}
+function gridUndo(redo){
+  gridCommit();
+  const from=redo?GRID.redo:GRID.undo, to=redo?GRID.undo:GRID.redo; const u=from.pop(); if(!u){ gStatus(redo?"Nothing to redo":"Nothing to undo","ok"); return; }
+  u.step.forEach(x=>gridQueue(x.i,x.c, redo? x.after : x.before));
+  to.push(u); gUndoBtns();
+  const f=u.step[0]; GRID.anchor={r:Math.min(...u.step.map(x=>x.i)),c:Math.min(...u.step.map(x=>x.c))}; gridSelect(Math.max(...u.step.map(x=>x.i)),Math.max(...u.step.map(x=>x.c)),false,true);
+  gStatus(`${redo?"Redone":"Undone"}: ${u.step.length} cell${u.step.length>1?"s":""}`,"saving");
+}
+function gUndoBtns(){ if($("gundo")){ $("gundo").disabled=!GRID.undo.length; $("gredo").disabled=!GRID.redo.length; } }
+function gRangeTSV(){ const R=gRange(), out=[]; for(let i=R.r1;i<=R.r2;i++){ const row=[]; for(let c=R.c1;c<=R.c2;c++) row.push(String(gCur(i,c)).replace(/[\t\n\r]+/g," ")); out.push(row.join("\t")); } return out.join("\n"); }
+function gClearRange(label){ const R=gRange(), list=[]; for(let i=R.r1;i<=R.r2;i++) for(let c=R.c1;c<=R.c2;c++) list.push({i,c,v:""}); const n=gridApply(list,label||"clear"); if(n) gStatus(`${n} cell${n>1?"s":""} cleared`,"saving"); }
 function gridScrollTo(i,c){ gridSelect(i,c); }
 function gridEdit(initial){
   const {r,c}=GRID.sel; if(gRO(r,c)||GRID.editing) return;
@@ -1807,7 +1980,7 @@ function gridEdit(initial){
     el.addEventListener("change",()=>{ gridCommit(); $("gwrap").focus(); }); }
   else if(gIsDate(c) && (initial===undefined)){ el=document.createElement("input"); el.type="date"; el.value=GRID.iso[r+":"+c] || (/^\d{4}-\d{2}-\d{2}$/.test(cur)?cur:""); el.dataset.date="1"; }
   else { el=document.createElement("input"); el.type="text"; el.value= initial!==undefined ? initial : cur; }
-  td.innerHTML=""; td.appendChild(el); GRID.editing={r,c,el,orig:cur};
+  td.innerHTML=""; td.appendChild(el); GRID.editing={r,c,el,orig:cur}; $("gfill").style.display="none";
   el.focus(); if(el.type==="text" && initial===undefined) el.select();
   el.addEventListener("keydown",e=>{
     if(e.key==="Enter"){ e.preventDefault(); gridCommit(); gridSelect(r+1,c); $("gwrap").focus(); }
@@ -1817,12 +1990,12 @@ function gridEdit(initial){
   });
   el.addEventListener("blur",()=>setTimeout(()=>{ if(GRID.editing && GRID.editing.el===el) gridCommit(); },0));
 }
-function gridCancel(){ const e=GRID.editing; if(!e) return; GRID.editing=null; gridPaint(e.r,e.c); $("gwrap").focus(); }
+function gridCancel(){ const e=GRID.editing; if(!e) return; GRID.editing=null; gridPaint(e.r,e.c); gFillPos(); $("gwrap").focus(); }
 function gridCommit(){
   const e=GRID.editing; if(!e) return; GRID.editing=null;
   let v=e.el.value; if(e.el.dataset.date && v==="" && e.orig) v="";
-  if(v!==e.orig) gridQueue(e.r,e.c,v);
-  gridPaint(e.r,e.c);
+  if(v!==e.orig) gridApply([{i:e.r,c:e.c,v}],"edit");
+  gridPaint(e.r,e.c); gFillPos();
 }
 function gridPaint(i,c){
   const td=gCell(i,c); if(!td) return;
@@ -1861,12 +2034,17 @@ async function gridFlush(){
 }
 function gridKeys(e){
   if(GRID.editing || !GRID.data) return;
-  const {r,c}=GRID.sel;
+  const {r,c}=GRID.sel, mod=e.ctrlKey||e.metaKey, k=e.key.toLowerCase();
+  if(mod && k==="z"){ e.preventDefault(); gridUndo(e.shiftKey); return; }
+  if(mod && k==="y"){ e.preventDefault(); gridUndo(true); return; }
+  if(mod && k==="a"){ e.preventDefault(); GRID.anchor={r:0,c:0}; gridSelect(Math.max(0,GRID.data.values.length-1),gridCols()-1,true,true); return; }
+  if(mod && k==="f"){ e.preventDefault(); gFindOpen(); return; }
   const mv={ArrowUp:[-1,0],ArrowDown:[1,0],ArrowLeft:[0,-1],ArrowRight:[0,1]}[e.key];
-  if(mv){ e.preventDefault(); gridSelect(r+mv[0],c+mv[1]); return; }
+  if(mv){ e.preventDefault(); gridSelect(r+mv[0],c+mv[1],false,e.shiftKey); return; }
   if(e.key==="Tab"){ e.preventDefault(); gridSelect(r,c+(e.shiftKey?-1:1)); return; }
   if(e.key==="Enter"||e.key==="F2"){ e.preventDefault(); gridEdit(); return; }
-  if(e.key==="Delete"||e.key==="Backspace"){ e.preventDefault(); if(!gRO(r,c) && gVal(r,c)!=="") gridQueue(r,c,""); return; }
+  if(e.key==="Escape"){ GRID.anchor={...GRID.sel}; gPaintRange(); return; }
+  if(e.key==="Delete"||e.key==="Backspace"){ e.preventDefault(); gClearRange(); return; }
   if(e.key.length===1 && !e.ctrlKey && !e.metaKey && !e.altKey && !gList(c)){ e.preventDefault(); gridEdit(e.key); }
 }
 function gridPaste(e){
@@ -1874,9 +2052,13 @@ function gridPaste(e){
   const t=(e.clipboardData||window.clipboardData).getData("text"); if(!t) return;
   e.preventDefault();
   const lines=t.replace(/\r/g,"").replace(/\n$/,"").split("\n").map(l=>l.split("\t"));
-  const {r,c}=GRID.sel;
-  if(r+lines.length>gridRows()){ GRID.extra+= r+lines.length-gridRows(); gridRender(); }
-  lines.forEach((row,di)=>row.forEach((v,dj)=>{ if(c+dj<gridCols()) gridQueue(r+di,c+dj,v); }));
+  const R=gRange(), list=[];
+  if(lines.length===1 && lines[0].length===1 && (R.r1!==R.r2||R.c1!==R.c2)){   // one value pasted into a selection → fill it
+    for(let i=R.r1;i<=R.r2;i++) for(let c=R.c1;c<=R.c2;c++) list.push({i,c,v:lines[0][0]});
+  } else lines.forEach((row,di)=>row.forEach((v,dj)=>{ if(R.c1+dj<gridCols()) list.push({i:R.r1+di,c:R.c1+dj,v}); }));
+  const n=gridApply(list,"paste");
+  const lr=Math.max(...list.map(x=>x.i)), lc=Math.max(...list.map(x=>x.c)); GRID.anchor={r:R.r1,c:R.c1}; gridSelect(lr,lc,true,true);
+  if(n) gStatus(`Pasted ${n} cell${n>1?"s":""}`,"saving");
 }
 async function gridDeleteSelected(){
   const i=GRID.sel.r; if(!GRID.data || i>=GRID.data.values.length) return gStatus("Select a row with data first.","err");
